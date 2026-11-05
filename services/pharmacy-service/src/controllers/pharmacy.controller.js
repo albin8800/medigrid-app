@@ -201,7 +201,11 @@ async function getMedicineById(req, res, next) {
  */
 async function addMedicine(req, res, next) {
   try {
-    const medicine = await pharmacyService.addMedicine(req.body);
+    const storeId = req.body.storeId || req.query.storeId || req.headers['x-store-id'];
+    const medicine = await pharmacyService.addMedicine({
+      ...req.body,
+      ...(storeId ? { storeId } : {})
+    });
     return res.status(201).json({
       success: true,
       data: medicine
@@ -257,13 +261,23 @@ async function updateMedicine(req, res, next) {
 async function adjustStock(req, res, next) {
   try {
     const { id } = req.params;
-    const updated = await pharmacyService.adjustStock(id, req.body);
+    const storeId = req.body.storeId || req.query.storeId || req.headers['x-store-id'];
+    const updated = await pharmacyService.adjustStock(id, {
+      ...req.body,
+      ...(storeId ? { storeId } : {})
+    });
 
     return res.status(200).json({
       success: true,
       data: updated
     });
   } catch (error) {
+    if (error.statusCode === 403 || error.message.includes('does not belong to store')) {
+      return res.status(403).json({
+        success: false,
+        error: error.message
+      });
+    }
     if (error.statusCode === 409 || error.message.includes('Insufficient stock')) {
       return res.status(409).json({
         success: false,
@@ -290,6 +304,202 @@ async function adjustStock(req, res, next) {
   }
 }
 
+/**
+ * Store login endpoint: POST /api/v1/auth/store/login
+ */
+async function storeLogin(req, res, next) {
+  try {
+    const { email, password } = req.body || {};
+    const result = await pharmacyService.loginStore(email, password);
+    return res.status(200).json({
+      success: true,
+      token: result.token,
+      store: result.store
+    });
+  } catch (error) {
+    if (error.statusCode === 403) {
+      return res.status(403).json({
+        success: false,
+        error: error.message
+      });
+    }
+    if (error.statusCode === 401) {
+      return res.status(401).json({
+        success: false,
+        error: error.message
+      });
+    }
+    if (error.statusCode === 400) {
+      return res.status(400).json({
+        success: false,
+        error: error.message
+      });
+    }
+    return next(error);
+  }
+}
+
+/**
+ * Super Admin login endpoint: POST /api/v1/auth/admin/login
+ */
+async function adminLogin(req, res, next) {
+  try {
+    const { email, password } = req.body || {};
+    const result = await pharmacyService.loginAdmin(email, password);
+    return res.status(200).json({
+      success: true,
+      token: result.token,
+      admin: result.admin
+    });
+  } catch (error) {
+    if (error.statusCode === 401) {
+      return res.status(401).json({
+        success: false,
+        error: error.message
+      });
+    }
+    if (error.statusCode === 400) {
+      return res.status(400).json({
+        success: false,
+        error: error.message
+      });
+    }
+    return next(error);
+  }
+}
+
+/**
+ * Public Location-Based Medicine Discovery: GET /api/v1/public/search
+ */
+async function publicSearch(req, res, next) {
+  try {
+    const { medicine, q, medicineName, query, lat, latitude, lng, longitude, radius, radiusKm, city } = req.query;
+
+    const results = await pharmacyService.publicSearchMedicines({
+      medicine: medicine || q || medicineName || query,
+      lat: lat ?? latitude,
+      lng: lng ?? longitude,
+      radius: radius ?? radiusKm,
+      city
+    });
+
+    return res.status(200).json({
+      success: true,
+      count: results.length,
+      data: results
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+/**
+ * List registered medical stores: GET /api/v1/admin/stores
+ */
+async function listStores(req, res, next) {
+  try {
+    const { status, search, q } = req.query;
+    const stores = await pharmacyService.listStores({
+      status,
+      search: search || q
+    });
+
+    return res.status(200).json({
+      success: true,
+      count: stores.length,
+      data: stores
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+/**
+ * Onboard a new medical store: POST /api/v1/admin/stores
+ */
+async function createStore(req, res, next) {
+  try {
+    const store = await pharmacyService.registerStore(req.body);
+    return res.status(201).json({
+      success: true,
+      data: store
+    });
+  } catch (error) {
+    if (error.statusCode === 409) {
+      return res.status(409).json({
+        success: false,
+        error: error.message
+      });
+    }
+    if (
+      error.statusCode === 400 ||
+      error.message.includes('required') ||
+      error.message.includes('coordinates') ||
+      error.message.includes('Latitude') ||
+      error.message.includes('Longitude')
+    ) {
+      return res.status(400).json({
+        success: false,
+        error: error.message
+      });
+    }
+    return next(error);
+  }
+}
+
+/**
+ * Change store status: PATCH /api/v1/admin/stores/:id/status
+ */
+async function updateStoreStatus(req, res, next) {
+  try {
+    const { id } = req.params;
+    const { status } = req.body || {};
+    const updated = await pharmacyService.updateStoreStatus(id, status);
+
+    return res.status(200).json({
+      success: true,
+      data: updated
+    });
+  } catch (error) {
+    if (error.statusCode === 404) {
+      return res.status(404).json({
+        success: false,
+        error: error.message
+      });
+    }
+    if (error.statusCode === 400) {
+      return res.status(400).json({
+        success: false,
+        error: error.message
+      });
+    }
+    return next(error);
+  }
+}
+
+/**
+ * Delete a store: DELETE /api/v1/admin/stores/:id
+ */
+async function deleteStore(req, res, next) {
+  try {
+    const { id } = req.params;
+    await pharmacyService.deleteStore(id);
+
+    return res.status(200).json({
+      success: true,
+      message: 'Store deleted successfully'
+    });
+  } catch (error) {
+    if (error.statusCode === 404) {
+      return res.status(404).json({
+        success: false,
+        error: error.message
+      });
+    }
+    return next(error);
+  }
+}
+
 module.exports = {
   getHealth,
   getReadiness,
@@ -302,5 +512,12 @@ module.exports = {
   getMedicineById,
   addMedicine,
   updateMedicine,
-  adjustStock
+  adjustStock,
+  storeLogin,
+  adminLogin,
+  publicSearch,
+  listStores,
+  createStore,
+  updateStoreStatus,
+  deleteStore
 };

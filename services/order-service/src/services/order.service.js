@@ -21,6 +21,82 @@ class OrderService {
     this.stockChecker = null;
     this.stockReleaser = null;
     this.stockDeductor = null;
+    this.storeVerifier = null;
+    this.resetStores();
+  }
+
+  /**
+   * Reset default known stores map
+   */
+  resetStores() {
+    this.knownStores = new Map([
+      ['store-001', { id: 'store-001', name: 'Apollo Pharmacy - Indiranagar', status: 'ACTIVE' }],
+      ['store-002', { id: 'store-002', name: 'MedPlus Chemist - Koramangala', status: 'ACTIVE' }],
+      ['store-003', { id: 'store-003', name: 'Lifecare Pharmacy - HSR Layout', status: 'SUSPENDED' }]
+    ]);
+  }
+
+  /**
+   * Set status for a store in mock store registry
+   */
+  setStoreStatus(storeId, status) {
+    const existing = this.knownStores.get(storeId) || { id: storeId, name: `Store ${storeId}` };
+    existing.status = status;
+    this.knownStores.set(storeId, existing);
+  }
+
+  /**
+   * Set a custom store verifier stub (e.g. for testing)
+   */
+  setStoreVerifier(verifierFn) {
+    this.storeVerifier = verifierFn;
+  }
+
+  /**
+   * Reset store verifier stub to default
+   */
+  resetStoreVerifier() {
+    this.storeVerifier = null;
+  }
+
+  /**
+   * Verify store exists and is ACTIVE
+   */
+  async verifyStoreActive(storeId) {
+    if (typeof this.storeVerifier === 'function') {
+      return await this.storeVerifier(storeId);
+    }
+
+    const catalogUrl = process.env.CATALOG_SERVICE_URL || process.env.PHARMACY_SERVICE_URL;
+    if (catalogUrl) {
+      try {
+        const response = await axios.get(`${catalogUrl}/api/v1/admin/stores/${storeId}`, { timeout: 3000 });
+        const store = response.data?.data || response.data;
+        if (!store || store.status !== 'ACTIVE') {
+          const err = new Error(`Store '${storeId}' is suspended or inactive`);
+          err.statusCode = 403;
+          throw err;
+        }
+        return store;
+      } catch (err) {
+        if (err.statusCode) throw err;
+      }
+    }
+
+    const store = this.knownStores.get(storeId);
+    if (!store) {
+      const err = new Error(`Store with id '${storeId}' not found`);
+      err.statusCode = 404;
+      throw err;
+    }
+
+    if (store.status === 'SUSPENDED') {
+      const err = new Error(`Store '${storeId}' is suspended`);
+      err.statusCode = 403;
+      throw err;
+    }
+
+    return store;
   }
 
   /**
@@ -458,9 +534,9 @@ class OrderService {
   /**
    * Deduct stock for a medicine item via catalog service stub or HTTP call
    */
-  async deductStock(medicineId, quantity) {
+  async deductStock(medicineId, quantity, storeId) {
     if (typeof this.stockDeductor === 'function') {
-      return await this.stockDeductor(medicineId, quantity);
+      return await this.stockDeductor(medicineId, quantity, storeId);
     }
 
     const catalogUrl =
@@ -471,7 +547,7 @@ class OrderService {
     try {
       const response = await axios.patch(
         `${catalogUrl}/api/v1/medicines/${medicineId}/stock`,
-        { action: 'DEDUCT', quantity },
+        { action: 'DEDUCT', quantity, ...(storeId ? { storeId } : {}) },
         { timeout: 3000 }
       );
       return response.data;
@@ -540,6 +616,9 @@ class OrderService {
       throw err;
     }
 
+    const targetStoreId = storeId || 'store-001';
+    await this.verifyStoreActive(targetStoreId);
+
     const normalizedItems = items.map((item, index) => {
       const medicineId = item.medicineId || item.id;
       if (!medicineId || (typeof medicineId === 'string' && medicineId.trim() === '')) {
@@ -577,7 +656,7 @@ class OrderService {
 
     // Deduct stock for each item via catalog service stub / HTTP client
     for (const item of normalizedItems) {
-      await this.deductStock(item.medicineId, item.quantity);
+      await this.deductStock(item.medicineId, item.quantity, targetStoreId);
     }
 
     // Financial calculations
@@ -602,7 +681,7 @@ class OrderService {
 
     const bill = {
       billId,
-      storeId: storeId || 'store-001',
+      storeId: targetStoreId,
       customerName: (customerName && customerName.trim()) || 'Walk-in Customer',
       customerPhone: (customerPhone && customerPhone.trim()) || '',
       paymentMethod: (paymentMethod && paymentMethod.trim().toUpperCase()) || 'CASH',
@@ -647,6 +726,61 @@ class OrderService {
   }
 
   /**
+   * Platform-wide sales analytics aggregating total stores, total revenue, and top-selling medicines
+   */
+  async getPlatformAnalytics() {
+    const bills = db.mockStore.listBills();
+    const totalRevenue =
+      Math.round(
+        bills.reduce((sum, b) => sum + (Number(b.finalTotal) || 0), 0) * 100
+      ) / 100;
+
+    const medMap = new Map();
+    const storeMap = new Map();
+
+    for (const bill of bills) {
+      const sId = bill.storeId || 'store-001';
+      if (!storeMap.has(sId)) {
+        storeMap.set(sId, { storeId: sId, totalRevenue: 0, billCount: 0 });
+      }
+      const sData = storeMap.get(sId);
+      sData.totalRevenue = Math.round((sData.totalRevenue + (Number(bill.finalTotal) || 0)) * 100) / 100;
+      sData.billCount += 1;
+
+      for (const item of (bill.items || [])) {
+        const mId = item.medicineId;
+        if (!medMap.has(mId)) {
+          medMap.set(mId, {
+            medicineId: mId,
+            medicineName: item.medicineName || `Medicine ${mId}`,
+            quantitySold: 0,
+            totalRevenue: 0
+          });
+        }
+        const mData = medMap.get(mId);
+        mData.quantitySold += Number(item.quantity || 0);
+        mData.totalRevenue = Math.round((mData.totalRevenue + (Number(item.subtotal) || 0)) * 100) / 100;
+      }
+    }
+
+    const topSellingMedicines = Array.from(medMap.values()).sort(
+      (a, b) => b.quantitySold - a.quantitySold
+    );
+
+    const storeBreakdown = Array.from(storeMap.values()).sort(
+      (a, b) => b.totalRevenue - a.totalRevenue
+    );
+
+    return {
+      totalStores: storeMap.size,
+      totalRevenue,
+      totalBills: bills.length,
+      topSellingMedicines,
+      storeBreakdown
+    };
+  }
+
+  /**
    * Clear in-memory storage (for test isolation)
    */
   clear() {
@@ -654,6 +788,8 @@ class OrderService {
     this.resetStockChecker();
     this.resetStockReleaser();
     this.resetStockDeductor();
+    this.resetStoreVerifier();
+    this.resetStores();
   }
 }
 

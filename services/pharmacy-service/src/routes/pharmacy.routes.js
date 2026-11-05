@@ -14,6 +14,19 @@ router.get('/api/v1/pharmacies/nearby', pharmacyController.getNearbyPharmacies);
 router.get('/api/v1/pharmacies/:id', pharmacyController.getPharmacyById);
 router.get('/api/v1/pharmacies', pharmacyController.getAllPharmacies);
 
+// Authentication & Tenant Scoping
+router.post('/api/v1/auth/store/login', pharmacyController.storeLogin);
+router.post('/api/v1/auth/admin/login', pharmacyController.adminLogin);
+
+// Public Location-Based Medicine Discovery API
+router.get('/api/v1/public/search', pharmacyController.publicSearch);
+
+// Super Admin Store Management APIs
+router.get('/api/v1/admin/stores', pharmacyController.listStores);
+router.post('/api/v1/admin/stores', pharmacyController.createStore);
+router.patch('/api/v1/admin/stores/:id/status', pharmacyController.updateStoreStatus);
+router.delete('/api/v1/admin/stores/:id', pharmacyController.deleteStore);
+
 // Medicine Inventory & Public Search endpoints
 router.get('/api/v1/medicines/search', pharmacyController.searchMedicines);
 router.get('/api/v1/medicines', pharmacyController.listMedicines);
