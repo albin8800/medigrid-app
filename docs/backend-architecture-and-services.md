@@ -1,198 +1,149 @@
-# MediGrid End-to-End Backend Architecture & Microservices Blueprint
+# MediGrid Pharmacy Inventory & In-Store Billing Architecture
 
-## 1. Executive Summary & Architecture Overview
+## 1. Executive Summary & Vision
 
-MediGrid is an enterprise B2B2C Pharmacy Aggregator connecting retail consumers, licensed independent pharmacies, and pharmaceutical distributors.
+MediGrid is an enterprise **In-Store Pharmacy Inventory Management & Point-of-Sale (POS) Billing System** combined with a **Public Real-Time Medicine Availability Discovery Portal**.
 
-To ensure resilience, strict separation of concerns, and alignment with the **Enterprise Golden Path (Docker, Kubernetes, ArgoCD)**, the backend is built on a **Lean Microservices Architecture** consisting of two decoupled Node.js/Express services backed by dedicated datastores.
+### Core Value Proposition:
+1. **Public Discovery (Read-Only)**: Consumers can search any medication and instantly see real-time availability, price, and store location without online ordering.
+2. **Staff Inventory Management**: Pharmacists manage catalog, batches, expiry dates, and unit prices.
+3. **In-Store POS & Billing**: Counter billing generates customer invoices and **atomically decrements stock** in real time.
+4. **Single-Store to Multi-Tenant Ready**: Designed for a single medical store in v1, with a built-in `store_id` partition key enabling seamless multi-tenant scaling in v2.
+
+---
+
+## 2. Microservice Topology
 
 ```
                               ┌──────────────────────────────────────────────┐
                               │           API GATEWAY / K8S INGRESS          │
                               └──────┬────────────────────────────────┬──────┘
                                      │                                │
-                     /api/v1/pharmacies/*                     /api/v1/orders/*
+                     /api/v1/medicines/*                      /api/v1/bills/*
                                      │                                │
                                      ▼                                ▼
                      ┌──────────────────────────────┐ ┌──────────────────────────────┐
-                     │       pharmacy-service       │ │        order-service         │
+                     │       catalog-service        │ │       billing-service        │
                      │         (Port 5001)          │ │         (Port 5002)          │
-                     └──────┬────────────────┬──────┘ └──────────────┬───────────────┘
-                            │                │                       │
-                            │ (Geo Index)    │ (Sync Stock Verification)
-                            ▼                │                       │
-                     ┌─────────────┐         └───────────────┐       │
-                     │    Redis    │                         ▼       ▼
-                     │ (Port 6379) │                   ┌─────────────┐
-                     └─────────────┘                   │ PostgreSQL  │
-                                                       │ (Port 5432) │
-                                                       └─────────────┘
+                     │  (Inventory & Public Search) │ │   (In-Store POS & Invoicing) │
+                     └──────────────┬───────────────┘ └──────────────┬───────────────┘
+                                    │                                │
+                                    │ ◀── Atomic Stock Deduction ────┤
+                                    │     (HTTP / Distributed Sync)  │
+                                    ▼                                ▼
+                             ┌─────────────┐                  ┌─────────────┐
+                             │    Redis    │                  │ PostgreSQL  │
+                             │ (Fast Cache)│                  │(Invoices/DB)│
+                             └─────────────┘                  └─────────────┘
 ```
 
 ---
 
-## 2. Microservice 1: `pharmacy-service` (Port 5001)
+## 3. Service 1: `catalog-service` (Port 5001)
 
-### 2.1 Role & Responsibilities
-- Pharmacy onboarding & geolocation registry.
-- Drug inventory catalog & real-time stock levels.
-- Low-latency (<10ms) proximity searches within a customer's radius.
+### Role & Domain
+Manages store profile, medication inventory records, batch tracking, and low-latency public medicine availability search.
 
-### 2.2 Data Store Connections
-1. **Redis (Port 6379)**:
-   - **Connection Client**: `ioredis`.
-   - **Configuration**: `REDIS_URL=redis://localhost:6379` (local docker) or cluster DNS (`redis.medigrid.svc.cluster.local:6379`).
-   - **Geospatial Commands**:
-     - `GEOADD pharmacies:locations <longitude> <latitude> <pharmacyId>`
-     - `GEOSEARCH pharmacies:locations FROMLONLAT <lng> <lat> BYRADIUS <radiusKm> KM WITHDIST WITHCOORD`
-   - **Resilience Strategy**: If Redis is offline or during isolated unit tests, an in-memory **Haversine Formula** calculates distance seamlessly without crashing.
-2. **PostgreSQL (Port 5432)**:
-   - Stores persistent pharmacy metadata (License number, address, phone, verified status).
+### Multi-Tenant Ready Data Model (`medicines`)
+```json
+{
+  "id": "med-uuid-001",
+  "storeId": "store-001",
+  "name": "Paracetamol 650mg",
+  "genericName": "Acetaminophen",
+  "category": "Antipyretic / Analgesic",
+  "batchNumber": "BATCH-2026-X",
+  "expiryDate": "2027-12-31",
+  "price": 32.50,
+  "stockQuantity": 120,
+  "reorderLevel": 20,
+  "inStock": true,
+  "locationRack": "Shelf B-2"
+}
+```
 
-### 2.3 API Contract
-| Method | Path | Description | Payload / Query |
+### Core Endpoints
+| Method | Path | Description | Access |
 | :--- | :--- | :--- | :--- |
-| `GET` | `/healthz` | Kubernetes Liveness Probe | None (`200 { status: "UP" }`) |
-| `GET` | `/ready` | Kubernetes Readiness Probe | Verifies Redis ping (`200 Ready` or `503`) |
-| `POST` | `/api/v1/pharmacies` | Register pharmacy + inventory | `{ name, address, lat, lng, inventory: [{ medicine, stock, price }] }` |
-| `GET` | `/api/v1/pharmacies/nearby`| Proximity search | Query: `?lat=12.97&lng=77.59&radius=5&medicine=Amoxicillin` |
-| `GET` | `/api/v1/pharmacies/:id` | Pharmacy profile & stock | Returns inventory for checkout validation |
-| `PATCH`| `/api/v1/pharmacies/:id/stock`| Reserve/Deduct stock | `{ medicine: "Amoxicillin", quantity: 2, action: "DEDUCT" }` |
+| `GET` | `/healthz` | Kubernetes Liveness Probe | Public |
+| `GET` | `/ready` | Kubernetes Readiness Probe | Public |
+| `GET` | `/api/v1/medicines/search` | Public search (`?q=paracetamol&storeId=store-001`) | Public |
+| `GET` | `/api/v1/medicines/:id` | Fetch medicine details & stock status | Public / Staff |
+| `POST` | `/api/v1/medicines` | Add new medicine to inventory | Staff / Admin |
+| `PUT` | `/api/v1/medicines/:id` | Update medicine price/details | Staff / Admin |
+| `PATCH`| `/api/v1/medicines/:id/stock` | Deduct or Restock inventory | Internal / Staff |
 
 ---
 
-## 3. Microservice 2: `order-service` (Port 5002)
+## 4. Service 2: `billing-service` (Port 5002)
 
-### 3.1 Role & Responsibilities
-- Customer prescription checkout & order orchestration.
-- ACID-compliant transaction processing to prevent duplicate drug reservations.
-- State machine management (`PENDING` ➔ `RESERVED` ➔ `CONFIRMED` / `CANCELLED`).
+### Role & Domain
+In-store POS counter billing engine. Creates customer sales receipts and atomically decrements inventory stock.
 
-### 3.2 Data Store Connections
-1. **PostgreSQL (Port 5432)**:
-   - **Connection Client**: `pg` (Connection Pooling with `Pool`).
-   - **Configuration**: `DATABASE_URL=postgres://user:password@localhost:5432/medigrid_orders`.
-   - **ACID Transaction Pattern**:
-     ```javascript
-     const client = await pool.connect();
-     try {
-       await client.query('BEGIN');
-       // 1. Insert order record
-       // 2. Lock inventory / state
-       // 3. Commit
-       await client.query('COMMIT');
-     } catch (e) {
-       await client.query('ROLLBACK');
-       throw e;
-     } finally {
-       client.release();
-     }
-     ```
-   - **Test Mocking Strategy**: In-memory repository pattern for fast local unit testing without running database containers.
+### Multi-Tenant Ready Data Model (`bills`)
+```json
+{
+  "billId": "BILL-2026-1001",
+  "storeId": "store-001",
+  "customerName": "John Doe",
+  "customerPhone": "9876543210",
+  "items": [
+    {
+      "medicineId": "med-uuid-001",
+      "medicineName": "Paracetamol 650mg",
+      "quantity": 2,
+      "unitPrice": 32.50,
+      "total": 65.00
+    }
+  ],
+  "subtotal": 65.00,
+  "taxAmount": 3.25,
+  "discountAmount": 0.00,
+  "finalTotal": 68.25,
+  "paymentMethod": "UPI",
+  "status": "PAID",
+  "createdAt": "2026-11-06T01:00:00Z"
+}
+```
 
-### 3.3 API Contract
-| Method | Path | Description | Payload / Query |
-| :--- | :--- | :--- | :--- |
-| `GET` | `/healthz` | Kubernetes Liveness Probe | None (`200 { status: "UP" }`) |
-| `GET` | `/ready` | Kubernetes Readiness Probe | Checks PostgreSQL pool connection |
-| `POST` | `/api/v1/orders` | Place a medication order | `{ customerId, pharmacyId, items: [{ medicine, quantity }], deliveryAddress }` |
-| `GET` | `/api/v1/orders/:id` | Fetch order details & status | None |
-| `PATCH`| `/api/v1/orders/:id/cancel`| Cancel order & release stock| Reason for cancellation |
-
----
-
-## 4. End-to-End Business Flow: Prescription Order & Fulfillment
-
+### POS Billing Workflow (Atomic Transaction)
 ```mermaid
 sequenceDiagram
     autonumber
-    actor Customer
-    participant Frontend as Next.js Web App
-    participant PharmacySvc as pharmacy-service (:5001)
-    participant Redis as Redis Cache
-    participant OrderSvc as order-service (:5002)
-    participant Postgres as PostgreSQL DB
+    actor Staff as Pharmacist (Counter)
+    participant POS as POS Billing UI
+    participant BillingSvc as billing-service (:5002)
+    participant CatalogSvc as catalog-service (:5001)
+    participant DB as PostgreSQL DB
 
-    Note over Customer, Redis: 1. Pharmacy Discovery & Proximity Search
-    Customer->>Frontend: Enter location & Medicine ("Amoxicillin")
-    Frontend->>PharmacySvc: GET /api/v1/pharmacies/nearby?lat=...&lng=...&medicine=Amoxicillin
-    PharmacySvc->>Redis: GEOSEARCH (Radius 5km)
-    Redis-->>PharmacySvc: Sorted list of nearby pharmacy IDs & distance
-    PharmacySvc-->>Frontend: Return available pharmacies & stock counts
-    Frontend-->>Customer: Display map with nearby pharmacies & prices
-
-    Note over Customer, Postgres: 2. Order Placement & Transactional Reservation
-    Customer->>Frontend: Select Pharmacy & Click "Order Now"
-    Frontend->>OrderSvc: POST /api/v1/orders { customerId, pharmacyId, items }
-    OrderSvc->>OrderSvc: Create order with status = "PENDING"
-    
-    Note over OrderSvc, PharmacySvc: 3. Inter-Service Inventory Verification
-    OrderSvc->>PharmacySvc: PATCH /api/v1/pharmacies/:id/stock (Deduct Stock)
+    Staff->>POS: Scan medicine & enter quantity (2 strips)
+    POS->>BillingSvc: POST /api/v1/bills { storeId, items, paymentMethod }
+    BillingSvc->>CatalogSvc: PATCH /api/v1/medicines/:id/stock { action: "DEDUCT", quantity: 2 }
     alt Stock Available
-        PharmacySvc-->>OrderSvc: HTTP 200 { success: true }
-        OrderSvc->>Postgres: BEGIN Transaction -> Status = "CONFIRMED" -> COMMIT
-        OrderSvc-->>Frontend: HTTP 201 { orderId, status: "CONFIRMED" }
-        Frontend-->>Customer: "Order Placed Successfully! Delivery in 30 mins."
-    else Stock Depleted / Insufficient
-        PharmacySvc-->>OrderSvc: HTTP 409 { error: "Insufficient stock" }
-        OrderSvc->>Postgres: Status = "CANCELLED"
-        OrderSvc-->>Frontend: HTTP 409 { error: "Medicine out of stock at this pharmacy" }
-        Frontend-->>Customer: "Item sold out. Showing alternative nearby pharmacies."
+        CatalogSvc-->>BillingSvc: HTTP 200 { remainingStock: 118 }
+        BillingSvc->>DB: INSERT INTO bills (...) WITH status = 'PAID'
+        BillingSvc-->>POS: HTTP 201 { billId: "BILL-2026-1001", receiptUrl }
+        POS-->>Staff: Print / Show Receipt & Complete Sale!
+    else Stock Insufficient
+        CatalogSvc-->>BillingSvc: HTTP 409 { error: "Insufficient stock. Only 1 available" }
+        BillingSvc-->>POS: HTTP 409 { error: "Cannot bill: Insufficient stock" }
+        POS-->>Staff: Display Error: Update quantity or restock
     end
 ```
 
 ---
 
-## 5. Local Database Execution Strategy (DevOps Transition)
-
-In **Phase 2 (DevSecOps Containerization)**, we spin up local databases via Docker Compose rather than installing them on the host operating system:
-
-```yaml
-version: '3.8'
-services:
-  postgres:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: medigrid
-      POSTGRES_PASSWORD: medigrid_password
-      POSTGRES_DB: medigrid_db
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "6379:6379"
-
-volumes:
-  postgres_data:
-```
-
-### Environment Variables Matrix
-| Variable | `pharmacy-service` | `order-service` | Default (Local Test) | Production (K8s / AWS) |
-| :--- | :--- | :--- | :--- | :--- |
-| `PORT` | `5001` | `5002` | Service default | Configured via K8s Service |
-| `REDIS_URL` | Required | Optional | `redis://localhost:6379` | AWS ElastiCache / Redis Pod |
-| `DATABASE_URL`| Optional | Required | In-memory mock | AWS RDS PostgreSQL / Postgres Pod |
-| `PHARMACY_SERVICE_URL` | N/A | Required | `http://localhost:5001` | `http://pharmacy-service:5001` (K8s DNS) |
-
----
-
-## 6. Testing Hierarchy (TDD Mandate)
+## 5. Frontend UI Structure (Next.js 14)
 
 ```text
-Level 1: Pure Unit Tests (Jest)
-         - No network calls, no real databases.
-         - Runs in < 1 second.
-         - Tests business rules, Haversine formulas, order state transitions.
-
-Level 2: API Integration Tests (Supertest)
-         - Tests Express router, input validation, HTTP status codes, error middleware.
-         - Runs against in-memory stubs or local Docker test DBs.
-
-Level 3: End-to-End Tests (Playwright / Cypress)
-         - Runs against running containers (Frontend + Services + Redis + Postgres).
-         - Simulates customer searching for drugs and completing checkout.
+frontend/src/app/
+├── (public)/
+│   └── page.tsx              <-- Public Medicine Search & Live Availability Finder
+│
+└── (pharmacy)/
+    ├── inventory/
+    │   └── page.tsx          <-- Inventory Dashboard (Add, Edit, Restock Medicine)
+    │
+    └── pos/
+        └── page.tsx          <-- In-Store Billing Counter (Search, Add to Bill, Print Receipt)
 ```
