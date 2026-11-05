@@ -29,15 +29,21 @@ export default function RootLayout({
           <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
             {children}
           </main>
-          <footer className="border-t border-slate-200/80 bg-white py-4 text-center text-xs text-slate-500 font-mono">
-            <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
+          <footer className="border-t border-slate-200/80 bg-white py-4 text-xs text-slate-500 font-sans">
+            <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3">
               <span className="flex items-center gap-2">
                 <span className="inline-block h-2 w-2 rounded-full bg-emerald-500"></span>
-                MediGrid Federated Network &bull; Catalog (:5001) &bull; Billing (:5002)
+                <span>MediGrid Pharmacy Network &copy; {new Date().getFullYear()} &bull; Real-Time Medicine Availability</span>
               </span>
-              <span className="text-slate-400">
-                Multi-Tenant Architecture &bull; Location-Aware Discovery &bull; In-Store POS
-              </span>
+              <div className="flex items-center gap-4 text-xs font-medium text-slate-500">
+                <a href="/store/login" className="hover:text-teal-700 hover:underline transition">
+                  Pharmacy Partner Login
+                </a>
+                <span>&bull;</span>
+                <a href="/admin/login" className="hover:text-blue-700 hover:underline transition">
+                  Platform Administration
+                </a>
+              </div>
             </div>
           </footer>
         </AuthProvider>

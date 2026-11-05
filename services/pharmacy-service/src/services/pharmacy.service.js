@@ -7,7 +7,44 @@ class PharmacyService {
     this.medicines = new Map();
     this.stores = new Map();
     this.REDIS_GEO_KEY = 'pharmacies:geo';
-    this.resetToSeed();
+    // Clean production baseline: No dummy data pre-loaded
+  }
+
+  /**
+   * Cryptographically hash a password using scrypt with a random salt
+   */
+  hashPassword(plainPassword) {
+    if (!plainPassword || typeof plainPassword !== 'string') {
+      plainPassword = 'changeMe123';
+    }
+    const salt = crypto.randomBytes(16).toString('hex');
+    const hash = crypto.scryptSync(plainPassword, salt, 64).toString('hex');
+    return `${salt}:${hash}`;
+  }
+
+  /**
+   * Cryptographically verify a password using timing-safe comparison
+   */
+  verifyPassword(plainPassword, storedHash) {
+    if (!plainPassword || !storedHash || typeof plainPassword !== 'string' || typeof storedHash !== 'string') {
+      return false;
+    }
+    // Backward compatibility for legacy test strings without salt separator
+    if (!storedHash.includes(':')) {
+      const a = Buffer.from(plainPassword);
+      const b = Buffer.from(storedHash);
+      return a.length === b.length && crypto.timingSafeEqual(a, b);
+    }
+    try {
+      const [salt, key] = storedHash.split(':');
+      if (!salt || !key) return false;
+      const hash = crypto.scryptSync(plainPassword, salt, 64).toString('hex');
+      const hashBuf = Buffer.from(hash, 'hex');
+      const keyBuf = Buffer.from(key, 'hex');
+      return hashBuf.length === keyBuf.length && crypto.timingSafeEqual(hashBuf, keyBuf);
+    } catch {
+      return false;
+    }
   }
 
   /**
@@ -23,7 +60,7 @@ class PharmacyService {
         city: 'Bangalore',
         phone: '+91-9876543210',
         email: 'apollo.indiranagar@medigrid.com',
-        password: 'store123',
+        password: this.hashPassword('store123'),
         coordinates: { lat: 12.9784, lng: 77.6408 },
         status: 'ACTIVE',
         createdAt: '2026-01-01T00:00:00.000Z',
@@ -37,7 +74,7 @@ class PharmacyService {
         city: 'Bangalore',
         phone: '+91-9876543211',
         email: 'medplus.koramangala@medigrid.com',
-        password: 'store123',
+        password: this.hashPassword('store123'),
         coordinates: { lat: 12.9352, lng: 77.6245 },
         status: 'ACTIVE',
         createdAt: '2026-01-01T00:00:00.000Z',
@@ -51,7 +88,7 @@ class PharmacyService {
         city: 'Bangalore',
         phone: '+91-9876543212',
         email: 'lifecare.hsr@medigrid.com',
-        password: 'store123',
+        password: this.hashPassword('store123'),
         coordinates: { lat: 12.9121, lng: 77.6446 },
         status: 'SUSPENDED',
         createdAt: '2026-01-01T00:00:00.000Z',
@@ -362,7 +399,7 @@ class PharmacyService {
       city: (data.city || 'Bangalore').trim(),
       phone: (data.phone || '').trim(),
       email,
-      password: data.password || 'store123',
+      password: this.hashPassword(data.password || 'store123'),
       coordinates: { lat: coords.lat, lng: coords.lng },
       status: (data.status || 'ACTIVE').toUpperCase(),
       createdAt: data.createdAt || now,
@@ -469,7 +506,7 @@ class PharmacyService {
     }
 
     const store = await this.getStoreByEmail(email);
-    if (!store || store.password !== password) {
+    if (!store || !this.verifyPassword(password, store.password)) {
       const err = new Error('Invalid email or password');
       err.statusCode = 401;
       throw err;
@@ -494,7 +531,7 @@ class PharmacyService {
   }
 
   /**
-   * Super Admin login
+   * Super Admin login (Strictly verified against environment credentials)
    */
   async loginAdmin(email, password) {
     if (!email || !password) {
@@ -503,10 +540,21 @@ class PharmacyService {
       throw err;
     }
 
-    const adminEmail = process.env.ADMIN_EMAIL || 'admin@medigrid.com';
-    const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
+    const adminEmail = process.env.ADMIN_EMAIL;
+    const adminPassword = process.env.ADMIN_PASSWORD;
 
-    if (email.trim().toLowerCase() !== adminEmail.toLowerCase() || password !== adminPassword) {
+    if (!adminEmail || !adminPassword) {
+      const err = new Error('Super Admin credentials not configured in environment (ADMIN_EMAIL, ADMIN_PASSWORD)');
+      err.statusCode = 500;
+      throw err;
+    }
+
+    const emailMatches = email.trim().toLowerCase() === adminEmail.trim().toLowerCase();
+    const passBuf = Buffer.from(password);
+    const expectedBuf = Buffer.from(adminPassword);
+    const passMatches = passBuf.length === expectedBuf.length && crypto.timingSafeEqual(passBuf, expectedBuf);
+
+    if (!emailMatches || !passMatches) {
       const err = new Error('Invalid admin email or password');
       err.statusCode = 401;
       throw err;

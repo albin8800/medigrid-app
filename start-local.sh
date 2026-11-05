@@ -4,6 +4,13 @@ set -e
 DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$DIR"
 
+# Load environment variables if .env exists
+if [ -f .env ]; then
+  set -a
+  source .env
+  set +a
+fi
+
 echo "=========================================================="
 echo "  🚀 Starting MediGrid Full-Stack Enterprise System"
 echo "=========================================================="
