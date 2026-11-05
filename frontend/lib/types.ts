@@ -15,6 +15,33 @@ export interface Medicine {
   updatedAt?: string;
 }
 
+export interface Store {
+  id: string;
+  name: string;
+  licenseNumber: string;
+  address: string;
+  city: string;
+  phone: string;
+  email: string;
+  coordinates?: { lat: number; lng: number };
+  status: 'ACTIVE' | 'SUSPENDED';
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface PublicSearchResult {
+  storeId: string;
+  storeName: string;
+  storeAddress: string;
+  distanceKm?: number;
+  storePhone: string;
+  medicineName: string;
+  genericName?: string;
+  price: number;
+  stockStatus: 'IN_STOCK' | 'LOW_STOCK' | 'OUT_OF_STOCK';
+  inStock: boolean;
+}
+
 export interface BillItem {
   medicineId: string;
   medicineName: string;
@@ -53,4 +80,43 @@ export interface Bill {
   status: 'PAID' | 'PENDING' | 'CANCELLED';
   createdAt: string;
   updatedAt?: string;
+}
+
+export interface AdminAnalytics {
+  totalStores: number;
+  totalRevenue: number;
+  totalBills: number;
+  topSellingMedicines?: Array<{
+    medicineId: string;
+    medicineName: string;
+    quantitySold: number;
+    totalRevenue: number;
+  }>;
+  storeBreakdown?: Array<{
+    storeId: string;
+    totalRevenue: number;
+    billCount: number;
+  }>;
+}
+
+export interface StoreSession {
+  token: string;
+  store: {
+    id: string;
+    name: string;
+    email: string;
+    status: 'ACTIVE' | 'SUSPENDED';
+    licenseNumber?: string;
+    city?: string;
+    phone?: string;
+    address?: string;
+  };
+}
+
+export interface AdminSession {
+  token: string;
+  admin: {
+    email: string;
+    role: string;
+  };
 }
