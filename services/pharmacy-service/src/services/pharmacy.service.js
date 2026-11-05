@@ -6,6 +6,117 @@ class PharmacyService {
     this.pharmacies = new Map();
     this.medicines = new Map();
     this.REDIS_GEO_KEY = 'pharmacies:geo';
+    this._seedInitialMedicines();
+  }
+
+  /**
+   * Seed initial catalog for instant local testing & demo
+   */
+  _seedInitialMedicines() {
+    const initialSeed = [
+      {
+        id: 'med-dolo-650',
+        storeId: 'store-001',
+        name: 'Dolo 650mg Tablet',
+        genericName: 'Paracetamol',
+        category: 'Pain Relief',
+        batchNumber: 'BATCH-2026-A1',
+        expiryDate: '2027-10-31',
+        price: 32.50,
+        stockQuantity: 120,
+        reorderLevel: 20,
+        inStock: true,
+        locationRack: 'Shelf A-1'
+      },
+      {
+        id: 'med-augmentin-625',
+        storeId: 'store-001',
+        name: 'Augmentin 625 Duo Tablet',
+        genericName: 'Amoxicillin + Clavulanic Acid',
+        category: 'Antibiotics',
+        batchNumber: 'BATCH-2026-B3',
+        expiryDate: '2026-12-15',
+        price: 210.00,
+        stockQuantity: 45,
+        reorderLevel: 10,
+        inStock: true,
+        locationRack: 'Shelf B-3'
+      },
+      {
+        id: 'med-cetzine-10',
+        storeId: 'store-001',
+        name: 'Cetzine 10mg Tablet',
+        genericName: 'Cetirizine Hydrochloride',
+        category: 'Allergy / Cold',
+        batchNumber: 'BATCH-2026-C2',
+        expiryDate: '2028-04-30',
+        price: 18.00,
+        stockQuantity: 80,
+        reorderLevel: 15,
+        inStock: true,
+        locationRack: 'Shelf C-2'
+      },
+      {
+        id: 'med-glycomet-500',
+        storeId: 'store-001',
+        name: 'Glycomet 500mg Tablet',
+        genericName: 'Metformin Hydrochloride',
+        category: 'Diabetes',
+        batchNumber: 'BATCH-2026-D1',
+        expiryDate: '2027-08-31',
+        price: 42.00,
+        stockQuantity: 150,
+        reorderLevel: 25,
+        inStock: true,
+        locationRack: 'Shelf D-1'
+      },
+      {
+        id: 'med-pan-40',
+        storeId: 'store-001',
+        name: 'Pan 40 Tablet',
+        genericName: 'Pantoprazole Gastro-Resistant',
+        category: 'Antacid / Gastro',
+        batchNumber: 'BATCH-2026-P4',
+        expiryDate: '2027-05-30',
+        price: 85.00,
+        stockQuantity: 65,
+        reorderLevel: 15,
+        inStock: true,
+        locationRack: 'Shelf A-3'
+      },
+      {
+        id: 'med-montair-lc',
+        storeId: 'store-001',
+        name: 'Montair LC Tablet',
+        genericName: 'Montelukast + Levocetirizine',
+        category: 'Respiratory',
+        batchNumber: 'BATCH-2026-M1',
+        expiryDate: '2026-11-30',
+        price: 145.00,
+        stockQuantity: 6,
+        reorderLevel: 10,
+        inStock: true,
+        locationRack: 'Shelf C-4'
+      },
+      {
+        id: 'med-atorva-20',
+        storeId: 'store-001',
+        name: 'Atorva 20mg Tablet',
+        genericName: 'Atorvastatin Calcium',
+        category: 'Cardiology',
+        batchNumber: 'BATCH-2025-Z9',
+        expiryDate: '2026-08-15',
+        price: 160.00,
+        stockQuantity: 0,
+        reorderLevel: 15,
+        inStock: false,
+        locationRack: 'Shelf D-4'
+      }
+    ];
+
+    for (const med of initialSeed) {
+      this.medicines.set(med.id, med);
+    }
   }
 
   /**
