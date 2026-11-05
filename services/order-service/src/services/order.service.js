@@ -22,7 +22,7 @@ class OrderService {
     this.stockReleaser = null;
     this.stockDeductor = null;
     this.storeVerifier = null;
-    this.resetStores();
+    this.knownStores = new Map(); // Clean production baseline: 0 stores pre-loaded
   }
 
   /**
