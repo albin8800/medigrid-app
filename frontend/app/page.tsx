@@ -1,41 +1,54 @@
 'use client';
 
 import React, { useState, useEffect, useTransition, useRef } from 'react';
-import Link from 'next/link';
 import {
   Search,
-  Sparkles,
   MapPin,
-  Clock,
-  ArrowRight,
+  Navigation,
+  Phone,
   ShieldCheck,
-  RefreshCw,
+  CheckCircle2,
+  AlertTriangle,
+  XCircle,
+  Store as StoreIcon,
   ShoppingBag,
+  Sparkles,
+  Compass,
+  ArrowRight,
   Info,
 } from 'lucide-react';
-import { Medicine } from '@/lib/types';
-import { searchMedicines } from '@/lib/api';
-import { formatINR } from '@/lib/utils';
+import { PublicSearchResult } from '@/lib/types';
+import { searchPublicMedicines } from '@/lib/api';
+import { formatINR, cn } from '@/lib/utils';
 
-const CATEGORIES = [
-  'All',
-  'Antibiotics',
-  'Pain Relief',
-  'Cardiology',
-  'Diabetes',
-  'Vitamins',
+const DEFAULT_COORDS = { lat: 12.9784, lng: 77.6408, label: 'Bangalore Central' };
+
+const QUICK_SUGGESTIONS = [
+  'Dolo 650',
+  'Augmentin',
+  'Cetzine',
+  'Pan 40',
+  'Glycomet 500',
+  'Montair LC',
+  'Telma 40',
 ];
 
-export default function PublicSearchPage() {
-  const [query, setQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('All');
-  const [medicines, setMedicines] = useState<Medicine[]>([]);
+export default function PublicDiscoveryPage() {
+  const [query, setQuery] = useState('Dolo 650');
+  const [coords, setCoords] = useState<{ lat: number; lng: number }>(DEFAULT_COORDS);
+  const [locationLabel, setLocationLabel] = useState('Bangalore (12.9784, 77.6408)');
+  const [cityInput, setCityInput] = useState('');
+  const [radiusKm, setRadiusKm] = useState<number>(15);
+  const [locating, setLocating] = useState(false);
+  const [locationMessage, setLocationMessage] = useState<string | null>(null);
+
+  const [results, setResults] = useState<PublicSearchResult[]>([]);
   const [loading, setLoading] = useState(true);
   const [source, setSource] = useState<'api' | 'fallback'>('api');
   const [, startTransition] = useTransition();
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Keyboard shortcut listener: ⌘K or Ctrl+K or / to focus search
+  // Keyboard shortcut listener: ⌘K or /
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
@@ -50,17 +63,51 @@ export default function PublicSearchPage() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  const loadData = async (searchQuery: string, category: string) => {
+  const handleUseCurrentLocation = () => {
+    setLocating(true);
+    setLocationMessage(null);
+
+    if (typeof window !== 'undefined' && 'geolocation' in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          const lat = parseFloat(position.coords.latitude.toFixed(4));
+          const lng = parseFloat(position.coords.longitude.toFixed(4));
+          setCoords({ lat, lng });
+          setLocationLabel(`Device GPS (${lat}, ${lng})`);
+          setLocationMessage('Location detected via device GPS.');
+          setLocating(false);
+        },
+        (error) => {
+          console.warn('Geolocation warning/error:', error.message);
+          setCoords(DEFAULT_COORDS);
+          setLocationLabel('Bangalore Default (12.9784, 77.6408)');
+          setLocationMessage('GPS permission denied or unavailable. Fallback: Bangalore coordinates applied.');
+          setLocating(false);
+        },
+        { timeout: 7000, enableHighAccuracy: false }
+      );
+    } else {
+      setCoords(DEFAULT_COORDS);
+      setLocationLabel('Bangalore Default (12.9784, 77.6408)');
+      setLocationMessage('Geolocation not supported by browser. Fallback: Bangalore default applied.');
+      setLocating(false);
+    }
+  };
+
+  const loadData = async (medQuery: string, currentCoords: { lat: number; lng: number }, radius: number, city: string) => {
     setLoading(true);
     try {
-      const res = await searchMedicines(
-        searchQuery,
-        category === 'All' ? undefined : category
-      );
-      setMedicines(res.data);
+      const res = await searchPublicMedicines({
+        medicine: medQuery,
+        lat: currentCoords.lat,
+        lng: currentCoords.lng,
+        radius,
+        city: city || undefined,
+      });
+      setResults(res.data);
       setSource(res.source);
     } catch (err) {
-      console.error('Failed to load medicines:', err);
+      console.error('Failed to query public search:', err);
     } finally {
       setLoading(false);
     }
@@ -69,269 +116,267 @@ export default function PublicSearchPage() {
   useEffect(() => {
     const timer = setTimeout(() => {
       startTransition(() => {
-        loadData(query, selectedCategory);
+        loadData(query, coords, radiusKm, cityInput);
       });
-    }, 200);
+    }, 250);
 
     return () => clearTimeout(timer);
-  }, [query, selectedCategory]);
+  }, [query, coords, radiusKm, cityInput]);
 
   return (
-    <div className="space-y-8 pb-12">
+    <div className="space-y-8 pb-16">
       {/* Hero Section */}
-      <div className="text-center max-w-3xl mx-auto pt-4 sm:pt-8">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-teal-50 text-teal-700 border border-teal-200 mb-4">
-          <Sparkles className="h-3.5 w-3.5 text-teal-600" />
-          <span>Real-time Central Pharmacy Inventory</span>
+      <div className="text-center max-w-3xl mx-auto pt-4 sm:pt-6">
+        <div className="inline-flex items-center gap-2 px-3.5 py-1 rounded-full text-xs font-semibold bg-teal-50 text-teal-700 border border-teal-200 mb-4 shadow-2xs">
+          <Sparkles className="h-3.5 w-3.5 text-teal-600 animate-pulse" />
+          <span>Public Live Medicine Discovery Network</span>
         </div>
         <h1 className="text-3xl sm:text-4xl font-extrabold text-slate-900 tracking-tight">
-          Find Genuine Medicines In Real-Time
+          Find Genuine Medicines Nearby
         </h1>
-        <p className="mt-3 text-base text-slate-600">
-          Check live shelf availability, batch-verified pricing, and physical rack locations across the MediGrid network.
+        <p className="mt-2.5 text-base text-slate-600 leading-relaxed">
+          Locate verified medical stores carrying your prescription in real time. Compare prices and check distance before visiting the counter.
         </p>
-
-        {/* Prominent Search Bar */}
-        <div className="mt-8 relative max-w-2xl mx-auto shadow-sm">
-          <div className="relative flex items-center">
-            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-slate-400">
-              <Search className="h-5 w-5" />
-            </div>
-            <input
-              ref={searchInputRef}
-              type="text"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Search by medicine name, salt composition (e.g. Paracetamol, Augmentin)..."
-              className="w-full rounded-xl border border-slate-300 bg-white py-3.5 pl-11 pr-24 text-sm text-slate-900 placeholder:text-slate-400 focus:border-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-600/20 transition-all shadow-sm"
-            />
-            <div className="absolute inset-y-0 right-0 flex items-center pr-3">
-              <kbd className="hidden sm:inline-flex items-center gap-1 rounded border border-slate-200 bg-slate-100 px-2 py-0.5 text-[11px] font-mono font-medium text-slate-500">
-                <span className="text-xs">⌘</span>K
-              </kbd>
-            </div>
-          </div>
-        </div>
-
-        {/* Category Pills */}
-        <div className="mt-4 flex flex-wrap items-center justify-center gap-1.5 sm:gap-2">
-          {CATEGORIES.map((cat) => {
-            const isSelected = selectedCategory === cat;
-            return (
-              <button
-                key={cat}
-                onClick={() => setSelectedCategory(cat)}
-                className={`px-3.5 py-1.5 rounded-full text-xs font-medium transition-all ${
-                  isSelected
-                    ? 'bg-teal-600 text-white shadow-sm shadow-teal-600/20'
-                    : 'bg-white text-slate-600 border border-slate-200/80 hover:bg-slate-50 hover:text-slate-900'
-                }`}
-              >
-                {cat}
-              </button>
-            );
-          })}
-        </div>
       </div>
 
-      {/* Status Bar */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 bg-white rounded-xl border border-slate-200/80 text-xs">
-        <div className="flex items-center gap-2 text-slate-600">
-          <span className="font-semibold text-slate-900 font-mono tabular-nums">
-            {medicines.length}
-          </span>
-          <span>medicines cataloged</span>
-          {query && (
-            <span className="text-slate-400 font-normal">
-              matching &ldquo;<span className="text-slate-700 font-medium">{query}</span>&rdquo;
+      {/* Main Search & Location Controller Card */}
+      <div className="max-w-4xl mx-auto bg-white rounded-2xl border border-slate-200/90 shadow-sm p-4 sm:p-6 space-y-4">
+        {/* Medicine Search Bar */}
+        <div className="relative">
+          <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4 text-slate-400">
+            <Search className="h-5 w-5" />
+          </div>
+          <input
+            ref={searchInputRef}
+            type="text"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search medicine brand or generic name (e.g. Dolo 650, Augmentin, Cetzine)..."
+            className="w-full pl-11 pr-24 py-3.5 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent text-sm sm:text-base font-medium transition"
+          />
+          <div className="absolute inset-y-0 right-0 flex items-center pr-3">
+            <span className="hidden sm:inline-flex items-center px-2 py-1 text-xs font-mono font-medium text-slate-400 bg-white border border-slate-200 rounded">
+              ⌘K
             </span>
-          )}
-        </div>
-
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-1.5">
-            <span className="text-slate-500">Source:</span>
-            {source === 'api' ? (
-              <span className="inline-flex items-center gap-1 font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
-                Catalog API (Port 5001)
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1 font-medium text-slate-700 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-                <span className="h-1.5 w-1.5 rounded-full bg-slate-400"></span>
-                Resilient Local Store
-              </span>
-            )}
           </div>
-          <button
-            onClick={() => loadData(query, selectedCategory)}
-            className="text-slate-500 hover:text-slate-800 transition-colors p-1"
-            title="Refresh Catalog"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin text-teal-600' : ''}`} />
-          </button>
         </div>
-      </div>
 
-      {/* Medicine Grid */}
-      {loading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {[1, 2, 3, 4, 5, 6].map((i) => (
-            <div
-              key={i}
-              className="h-48 rounded-xl bg-white border border-slate-200/80 p-5 animate-pulse flex flex-col justify-between"
+        {/* Quick Suggestion Pills */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs font-medium text-slate-400">Suggestions:</span>
+          {QUICK_SUGGESTIONS.map((sug) => (
+            <button
+              key={sug}
+              type="button"
+              onClick={() => setQuery(sug)}
+              className={cn(
+                'px-2.5 py-1 rounded-full text-xs font-medium border transition-colors',
+                query.toLowerCase() === sug.toLowerCase()
+                  ? 'bg-teal-600 text-white border-teal-600 shadow-2xs'
+                  : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100 hover:border-slate-300'
+              )}
             >
-              <div className="space-y-3">
-                <div className="h-5 bg-slate-200 rounded w-2/3"></div>
-                <div className="h-4 bg-slate-100 rounded w-full"></div>
-              </div>
-              <div className="h-8 bg-slate-100 rounded w-1/3"></div>
-            </div>
+              {sug}
+            </button>
           ))}
         </div>
-      ) : medicines.length === 0 ? (
-        <div className="bg-white rounded-xl border border-slate-200/80 p-12 text-center max-w-md mx-auto">
-          <div className="h-12 w-12 rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mx-auto mb-3">
-            <Search className="h-6 w-6" />
+
+        <div className="border-t border-slate-100 pt-3"></div>
+
+        {/* Location Selector Bar */}
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+          {/* Button: Use Current Location */}
+          <div className="md:col-span-5">
+            <button
+              type="button"
+              onClick={handleUseCurrentLocation}
+              disabled={locating}
+              className="w-full inline-flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-800 text-xs sm:text-sm font-medium transition active:scale-[0.99] disabled:opacity-60"
+            >
+              <Navigation className={cn('h-4 w-4 text-teal-600', locating && 'animate-spin')} />
+              <span>{locating ? 'Locating device...' : '📍 Use My Current Location'}</span>
+            </button>
           </div>
-          <h3 className="text-base font-semibold text-slate-900">No medicines found</h3>
-          <p className="mt-1 text-sm text-slate-500">
-            We couldn&apos;t find any medicine matching your criteria. Try adjusting your search query or category filter.
-          </p>
-          <button
-            onClick={() => {
-              setQuery('');
-              setSelectedCategory('All');
-            }}
-            className="mt-4 px-4 py-2 bg-slate-900 text-white rounded-lg text-xs font-medium hover:bg-slate-800 transition-colors"
-          >
-            Clear Search
-          </button>
+
+          {/* Manual City / Area Filter */}
+          <div className="md:col-span-4 relative">
+            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">
+              <MapPin className="h-4 w-4" />
+            </div>
+            <input
+              type="text"
+              value={cityInput}
+              onChange={(e) => setCityInput(e.target.value)}
+              placeholder="City/Area (e.g. Bangalore, Indiranagar)"
+              className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-teal-500"
+            />
+          </div>
+
+          {/* Radius Selector */}
+          <div className="md:col-span-3 flex items-center gap-2 justify-end">
+            <label className="text-xs text-slate-500 whitespace-nowrap">Radius:</label>
+            <select
+              value={radiusKm}
+              onChange={(e) => setRadiusKm(Number(e.target.value))}
+              className="px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-teal-500 font-mono"
+            >
+              <option value={5}>Within 5 km</option>
+              <option value={10}>Within 10 km</option>
+              <option value={15}>Within 15 km</option>
+              <option value={25}>Within 25 km</option>
+            </select>
+          </div>
         </div>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {medicines.map((med) => {
-            const isOutOfStock = med.stockQuantity === 0 || !med.inStock;
-            const isLowStock = !isOutOfStock && med.stockQuantity <= med.reorderLevel;
+
+        {/* Location Status Badge / Feedback */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between text-xs text-slate-500 pt-1 border-t border-slate-100">
+          <div className="flex items-center gap-1.5">
+            <Compass className="h-3.5 w-3.5 text-teal-600" />
+            <span className="font-mono text-slate-700">{locationLabel}</span>
+            {locationMessage && (
+              <span className="text-teal-700 italic ml-1 font-sans">({locationMessage})</span>
+            )}
+          </div>
+          <div className="text-[11px] text-slate-400 mt-1 sm:mt-0">
+            Source: <span className="font-mono">{source === 'api' ? 'Catalog API (:5001)' : 'Offline Local Fallback'}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Privacy Notice Banner */}
+      <div className="max-w-4xl mx-auto flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-slate-100/70 border border-slate-200/80 text-xs text-slate-600">
+        <ShieldCheck className="h-4 w-4 text-teal-600 shrink-0" />
+        <span>
+          <strong>Patient Privacy Protected:</strong> Batch numbers, procurement suppliers, and physical rack allocations are strictly masked for public discovery and reserved for registered pharmacy staff.
+        </span>
+      </div>
+
+      {/* Results Header */}
+      <div className="max-w-4xl mx-auto flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <h2 className="text-lg font-bold text-slate-900">
+            Available at Nearby Pharmacies
+          </h2>
+          <span className="px-2 py-0.5 rounded-full text-xs font-mono font-medium bg-slate-200 text-slate-700">
+            {results.length} {results.length === 1 ? 'store' : 'stores'} found
+          </span>
+        </div>
+        <span className="text-xs text-slate-400">Sorted by proximity (closest first)</span>
+      </div>
+
+      {/* Results Cards List */}
+      <div className="max-w-4xl mx-auto space-y-3.5">
+        {loading ? (
+          <div className="space-y-3">
+            {[1, 2, 3].map((n) => (
+              <div
+                key={n}
+                className="bg-white rounded-xl border border-slate-200/80 p-5 animate-pulse flex flex-col gap-3"
+              >
+                <div className="h-5 bg-slate-200 rounded w-1/3"></div>
+                <div className="h-4 bg-slate-100 rounded w-1/2"></div>
+                <div className="h-4 bg-slate-100 rounded w-1/4"></div>
+              </div>
+            ))}
+          </div>
+        ) : results.length === 0 ? (
+          <div className="bg-white rounded-2xl border border-dashed border-slate-300 p-12 text-center space-y-3">
+            <div className="h-12 w-12 rounded-full bg-slate-100 flex items-center justify-center mx-auto text-slate-400">
+              <StoreIcon className="h-6 w-6" />
+            </div>
+            <h3 className="text-base font-semibold text-slate-900">
+              No medical stores found carrying &ldquo;{query}&rdquo;
+            </h3>
+            <p className="text-xs text-slate-500 max-w-md mx-auto">
+              Try searching with another brand name, increasing the search radius, or clearing the city filter.
+            </p>
+          </div>
+        ) : (
+          results.map((item, idx) => {
+            const isLowStock = item.stockStatus === 'LOW_STOCK';
+            const isOutOfStock = item.stockStatus === 'OUT_OF_STOCK';
 
             return (
               <div
-                key={med.id}
-                className="group relative flex flex-col justify-between bg-white rounded-xl border border-slate-200/80 p-5 shadow-sm hover:border-slate-300 hover:shadow-md transition-all"
+                key={`${item.storeId}-${item.medicineName}-${idx}`}
+                className="bg-white rounded-xl border border-slate-200/90 shadow-2xs hover:border-slate-300 hover:shadow-xs transition p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4"
               >
-                <div>
-                  {/* Top line: Category & Stock badge */}
-                  <div className="flex items-center justify-between gap-2 mb-2">
-                    <span className="text-[11px] font-semibold tracking-wider uppercase text-slate-500">
-                      {med.category}
+                {/* Store & Medicine Information */}
+                <div className="space-y-2 flex-1 min-w-0">
+                  <div className="flex items-center gap-2.5 flex-wrap">
+                    <span className="font-bold text-slate-900 text-base">
+                      {item.storeName}
                     </span>
-
-                    {/* Stock status badge according to modern-ui-designer tokens */}
+                    {item.distanceKm !== undefined && (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-mono font-medium bg-teal-50 text-teal-700 border border-teal-200">
+                        <MapPin className="h-3 w-3" />
+                        <span>{item.distanceKm} km away</span>
+                      </span>
+                    )}
+                    {/* Status Pill */}
                     {isOutOfStock ? (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-rose-50 text-rose-700 border border-rose-200">
-                        <span className="h-1.5 w-1.5 rounded-full bg-rose-500"></span>
-                        Out of Stock
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200">
+                        <XCircle className="h-3 w-3 text-rose-500" />
+                        <span>Out of Stock</span>
                       </span>
                     ) : isLowStock ? (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
-                        <span className="h-1.5 w-1.5 rounded-full bg-amber-500"></span>
-                        Low Stock: <span className="font-mono tabular-nums font-semibold">{med.stockQuantity}</span> left
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                        <AlertTriangle className="h-3 w-3 text-amber-500" />
+                        <span>🟡 Low Stock</span>
                       </span>
                     ) : (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
-                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
-                        In Stock: <span className="font-mono tabular-nums font-semibold">{med.stockQuantity}</span>
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                        <CheckCircle2 className="h-3 w-3 text-emerald-500" />
+                        <span>🟢 In Stock</span>
                       </span>
                     )}
                   </div>
 
-                  {/* Brand name */}
-                  <h3 className="text-base font-semibold text-slate-900 group-hover:text-teal-700 transition-colors">
-                    {med.name}
-                  </h3>
+                  <div className="flex items-baseline gap-2 flex-wrap">
+                    <span className="font-semibold text-slate-800 text-sm">
+                      {item.medicineName}
+                    </span>
+                    {item.genericName && (
+                      <span className="text-xs text-slate-500 italic">
+                        ({item.genericName})
+                      </span>
+                    )}
+                  </div>
 
-                  {/* Generic Composition */}
-                  <p className="mt-1 text-xs text-slate-500 line-clamp-2">
-                    {med.genericName || 'Standard Pharmaceutical Formulation'}
-                  </p>
+                  <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                    <MapPin className="h-3.5 w-3.5 text-slate-400 shrink-0" />
+                    <span className="truncate">{item.storeAddress}</span>
+                  </div>
                 </div>
 
-                <div className="mt-4 pt-3 border-t border-slate-100 space-y-3">
-                  {/* Rack location & Expiry */}
-                  <div className="flex items-center justify-between text-xs text-slate-500 font-mono">
-                    <span className="inline-flex items-center gap-1 bg-slate-50 px-2 py-0.5 rounded border border-slate-200/60 text-slate-700 font-medium">
-                      <MapPin className="h-3 w-3 text-slate-400" />
-                      {med.locationRack || 'Shelf Storage'}
-                    </span>
-                    <span className="inline-flex items-center gap-1 text-slate-400">
-                      <Clock className="h-3 w-3" />
-                      Exp: {med.expiryDate || 'N/A'}
+                {/* Pricing & Store Actions */}
+                <div className="flex md:flex-col items-center md:items-end justify-between gap-3 pt-3 md:pt-0 border-t md:border-t-0 border-slate-100">
+                  <div className="text-left md:text-right">
+                    <div className="text-xl font-bold font-mono tabular-nums text-slate-900">
+                      {formatINR(item.price)}
+                    </div>
+                    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-500">
+                      <ShoppingBag className="h-3 w-3 text-slate-400" />
+                      <span>Visit Store for In-Person Purchase</span>
                     </span>
                   </div>
 
-                  {/* Price and Action */}
-                  <div className="flex items-center justify-between pt-1">
-                    <div>
-                      <span className="text-[10px] text-slate-400 uppercase tracking-wider block font-medium">
-                        Unit MRP
-                      </span>
-                      <span className="text-lg font-bold font-mono tabular-nums text-slate-900">
-                        {formatINR(med.price)}
-                      </span>
-                    </div>
-
-                    <Link
-                      href={`/billing?quickAdd=${med.id}`}
-                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                        isOutOfStock
-                          ? 'bg-slate-100 text-slate-400 cursor-not-allowed pointer-events-none'
-                          : 'bg-teal-50 text-teal-700 border border-teal-200 hover:bg-teal-600 hover:text-white'
-                      }`}
-                    >
-                      <ShoppingBag className="h-3.5 w-3.5" />
-                      <span>Dispense</span>
-                    </Link>
+                  <div className="flex items-center gap-2">
+                    {item.storePhone && (
+                      <a
+                        href={`tel:${item.storePhone}`}
+                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-medium transition"
+                      >
+                        <Phone className="h-3.5 w-3.5 text-teal-600" />
+                        <span>📞 Call Store</span>
+                      </a>
+                    )}
                   </div>
                 </div>
               </div>
             );
-          })}
-        </div>
-      )}
-
-      {/* Feature banner */}
-      <div className="mt-12 bg-white rounded-xl border border-slate-200/80 p-6">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 text-center md:text-left">
-          <div className="flex flex-col md:flex-row items-center md:items-start gap-3">
-            <div className="h-10 w-10 rounded-lg bg-teal-50 border border-teal-200 flex items-center justify-center text-teal-600 flex-shrink-0">
-              <ShieldCheck className="h-5 w-5" />
-            </div>
-            <div>
-              <h4 className="text-sm font-semibold text-slate-900">100% Genuine & Batch-Tracked</h4>
-              <p className="mt-1 text-xs text-slate-500">Every medicine is checked against batch records and expiry timestamps.</p>
-            </div>
-          </div>
-
-          <div className="flex flex-col md:flex-row items-center md:items-start gap-3">
-            <div className="h-10 w-10 rounded-lg bg-blue-50 border border-blue-200 flex items-center justify-center text-blue-600 flex-shrink-0">
-              <MapPin className="h-5 w-5" />
-            </div>
-            <div>
-              <h4 className="text-sm font-semibold text-slate-900">Exact Shelf Coordinates</h4>
-              <p className="mt-1 text-xs text-slate-500">Instant rack navigation for fast pharmacist dispensing.</p>
-            </div>
-          </div>
-
-          <div className="flex flex-col md:flex-row items-center md:items-start gap-3">
-            <div className="h-10 w-10 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-600 flex-shrink-0">
-              <Info className="h-5 w-5" />
-            </div>
-            <div>
-              <h4 className="text-sm font-semibold text-slate-900">GST-Compliant POS</h4>
-              <p className="mt-1 text-xs text-slate-500">Live item stock deduction and automatic 5% GST tax receipt generation.</p>
-            </div>
-          </div>
-        </div>
+          })
+        )}
       </div>
     </div>
   );
