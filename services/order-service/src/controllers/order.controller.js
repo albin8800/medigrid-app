@@ -161,6 +161,13 @@ async function createBill(req, res, next) {
       data: bill
     });
   } catch (error) {
+    if (error.statusCode === 403 || error.message.includes('suspended')) {
+      return res.status(403).json({
+        success: false,
+        error: error.message
+      });
+    }
+
     if (
       error.statusCode === 409 ||
       error.message.includes('Insufficient stock') ||
@@ -239,6 +246,21 @@ async function listBills(req, res, next) {
   }
 }
 
+/**
+ * GET /api/v1/admin/analytics: Platform-wide sales analytics aggregating total stores, total revenue, and top-selling medicines
+ */
+async function getPlatformAnalytics(req, res, next) {
+  try {
+    const analytics = await orderService.getPlatformAnalytics();
+    return res.status(200).json({
+      success: true,
+      data: analytics
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
 module.exports = {
   getHealth,
   getReadiness,
@@ -248,5 +270,6 @@ module.exports = {
   listOrders,
   createBill,
   getBillById,
-  listBills
+  listBills,
+  getPlatformAnalytics
 };

@@ -17,4 +17,7 @@ router.post('/api/v1/bills', orderController.createBill);
 router.get('/api/v1/bills/:id', orderController.getBillById);
 router.get('/api/v1/bills', orderController.listBills);
 
+// Platform-Wide Sales Analytics
+router.get('/api/v1/admin/analytics', orderController.getPlatformAnalytics);
+
 module.exports = router;

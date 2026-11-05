@@ -5,8 +5,63 @@ class PharmacyService {
   constructor() {
     this.pharmacies = new Map();
     this.medicines = new Map();
+    this.stores = new Map();
     this.REDIS_GEO_KEY = 'pharmacies:geo';
-    this._seedInitialMedicines();
+    this.resetToSeed();
+  }
+
+  /**
+   * Pre-seed default medical stores
+   */
+  seedDefaultStores() {
+    const defaultStores = [
+      {
+        id: 'store-001',
+        name: 'Apollo Pharmacy - Indiranagar',
+        licenseNumber: 'KA-BLR-2023-001',
+        address: '100 Ft Rd, Indiranagar',
+        city: 'Bangalore',
+        phone: '+91-9876543210',
+        email: 'apollo.indiranagar@medigrid.com',
+        password: 'store123',
+        coordinates: { lat: 12.9784, lng: 77.6408 },
+        status: 'ACTIVE',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z'
+      },
+      {
+        id: 'store-002',
+        name: 'MedPlus Chemist - Koramangala',
+        licenseNumber: 'KA-BLR-2023-002',
+        address: '80 Ft Rd, 4th Block, Koramangala',
+        city: 'Bangalore',
+        phone: '+91-9876543211',
+        email: 'medplus.koramangala@medigrid.com',
+        password: 'store123',
+        coordinates: { lat: 12.9352, lng: 77.6245 },
+        status: 'ACTIVE',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z'
+      },
+      {
+        id: 'store-003',
+        name: 'Lifecare Pharmacy - HSR Layout',
+        licenseNumber: 'KA-BLR-2023-003',
+        address: '17th Main Rd, Sector 4, HSR Layout',
+        city: 'Bangalore',
+        phone: '+91-9876543212',
+        email: 'lifecare.hsr@medigrid.com',
+        password: 'store123',
+        coordinates: { lat: 12.9121, lng: 77.6446 },
+        status: 'SUSPENDED',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z'
+      }
+    ];
+
+    for (const store of defaultStores) {
+      this.stores.set(store.id, { ...store });
+    }
   }
 
   /**
@@ -14,6 +69,7 @@ class PharmacyService {
    */
   _seedInitialMedicines() {
     const initialSeed = [
+      // store-001 medicines
       {
         id: 'med-dolo-650',
         storeId: 'store-001',
@@ -111,21 +167,85 @@ class PharmacyService {
         reorderLevel: 15,
         inStock: false,
         locationRack: 'Shelf D-4'
+      },
+
+      // store-002 medicines
+      {
+        id: 'med-dolo-650-s2',
+        storeId: 'store-002',
+        name: 'Dolo 650mg Tablet',
+        genericName: 'Paracetamol',
+        category: 'Pain Relief',
+        batchNumber: 'BATCH-2026-S2A',
+        expiryDate: '2027-12-31',
+        price: 30.00,
+        stockQuantity: 60,
+        reorderLevel: 15,
+        inStock: true,
+        locationRack: 'Rack 2-A'
+      },
+      {
+        id: 'med-augmentin-625-s2',
+        storeId: 'store-002',
+        name: 'Augmentin 625 Duo Tablet',
+        genericName: 'Amoxicillin + Clavulanic Acid',
+        category: 'Antibiotics',
+        batchNumber: 'BATCH-2026-S2B',
+        expiryDate: '2026-11-15',
+        price: 205.00,
+        stockQuantity: 25,
+        reorderLevel: 10,
+        inStock: true,
+        locationRack: 'Rack 2-B'
+      },
+      {
+        id: 'med-cetzine-10-s2',
+        storeId: 'store-002',
+        name: 'Cetzine 10mg Tablet',
+        genericName: 'Cetirizine Hydrochloride',
+        category: 'Allergy / Cold',
+        batchNumber: 'BATCH-2026-S2C',
+        expiryDate: '2028-02-28',
+        price: 17.50,
+        stockQuantity: 50,
+        reorderLevel: 15,
+        inStock: true,
+        locationRack: 'Rack 2-C'
+      },
+
+      // store-003 medicines (Suspended store - for testing exclusion)
+      {
+        id: 'med-dolo-650-s3',
+        storeId: 'store-003',
+        name: 'Dolo 650mg Tablet',
+        genericName: 'Paracetamol',
+        category: 'Pain Relief',
+        batchNumber: 'BATCH-2026-S3A',
+        expiryDate: '2027-06-30',
+        price: 28.00,
+        stockQuantity: 100,
+        reorderLevel: 20,
+        inStock: true,
+        locationRack: 'Rack 3-A'
       }
     ];
 
     for (const med of initialSeed) {
-      this.medicines.set(med.id, med);
+      this.medicines.set(med.id, { ...med });
     }
   }
 
   /**
+   * Reset data to initial seeded state
+   */
+  resetToSeed() {
+    this.clear();
+    this.seedDefaultStores();
+    this._seedInitialMedicines();
+  }
+
+  /**
    * Calculate Haversine distance in kilometers between two geo coordinates
-   * @param {number} lat1
-   * @param {number} lng1
-   * @param {number} lat2
-   * @param {number} lng2
-   * @returns {number} distance in kilometers rounded to 2 decimal places
    */
   calculateDistance(lat1, lng1, lat2, lng2) {
     if (lat1 === lat2 && lng1 === lng2) {
@@ -186,14 +306,328 @@ class PharmacyService {
     }
 
     return {
+      lat: parsedLat,
+      lng: parsedLng,
       latitude: parsedLat,
       longitude: parsedLng
     };
   }
 
   /**
-   * Register a new pharmacy
+   * Helper to sanitize store object (remove password)
    */
+  _sanitizeStore(store) {
+    if (!store) return null;
+    const { password, ...sanitized } = store;
+    return sanitized;
+  }
+
+  // ==========================================
+  // STORE / TENANT MODEL & AUTH METHODS
+  // ==========================================
+
+  /**
+   * Register/onboard a new medical store
+   */
+  async registerStore(data) {
+    if (!data || !data.name || typeof data.name !== 'string' || data.name.trim() === '') {
+      const err = new Error('Store name is required');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    if (!data.email || typeof data.email !== 'string' || data.email.trim() === '') {
+      const err = new Error('Store email is required');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const email = data.email.trim().toLowerCase();
+    const existing = await this.getStoreByEmail(email);
+    if (existing) {
+      const err = new Error(`Store with email '${email}' already exists`);
+      err.statusCode = 409;
+      throw err;
+    }
+
+    const coords = this._extractCoordinates(data);
+    const id = data.id || `store-${crypto.randomUUID()}`;
+    const now = new Date().toISOString();
+
+    const store = {
+      id,
+      name: data.name.trim(),
+      licenseNumber: (data.licenseNumber || `LIC-${Date.now()}`).trim(),
+      address: (data.address || '').trim(),
+      city: (data.city || 'Bangalore').trim(),
+      phone: (data.phone || '').trim(),
+      email,
+      password: data.password || 'store123',
+      coordinates: { lat: coords.lat, lng: coords.lng },
+      status: (data.status || 'ACTIVE').toUpperCase(),
+      createdAt: data.createdAt || now,
+      updatedAt: now
+    };
+
+    this.stores.set(id, store);
+    return this._sanitizeStore(store);
+  }
+
+  /**
+   * Get store by ID (sanitized)
+   */
+  async getStoreById(id) {
+    if (!id) return null;
+    const store = this.stores.get(id);
+    return store ? this._sanitizeStore(store) : null;
+  }
+
+  /**
+   * Get raw store by email (internal use for login)
+   */
+  async getStoreByEmail(email) {
+    if (!email) return null;
+    const normalized = email.trim().toLowerCase();
+    for (const store of this.stores.values()) {
+      if (store.email && store.email.toLowerCase() === normalized) {
+        return store;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * List all stores with optional filtering by status and search
+   */
+  async listStores({ status, search } = {}) {
+    let results = Array.from(this.stores.values());
+
+    if (status) {
+      const targetStatus = status.trim().toUpperCase();
+      results = results.filter((s) => s.status === targetStatus);
+    }
+
+    if (search) {
+      const q = search.trim().toLowerCase();
+      results = results.filter(
+        (s) =>
+          (s.name && s.name.toLowerCase().includes(q)) ||
+          (s.licenseNumber && s.licenseNumber.toLowerCase().includes(q)) ||
+          (s.city && s.city.toLowerCase().includes(q))
+      );
+    }
+
+    return results.map((s) => this._sanitizeStore(s));
+  }
+
+  /**
+   * Update store status (ACTIVE or SUSPENDED)
+   */
+  async updateStoreStatus(id, status) {
+    const store = this.stores.get(id);
+    if (!store) {
+      const err = new Error(`Store with id '${id}' not found`);
+      err.statusCode = 404;
+      throw err;
+    }
+
+    const newStatus = (status || '').trim().toUpperCase();
+    if (newStatus !== 'ACTIVE' && newStatus !== 'SUSPENDED') {
+      const err = new Error("Invalid status. Must be 'ACTIVE' or 'SUSPENDED'");
+      err.statusCode = 400;
+      throw err;
+    }
+
+    store.status = newStatus;
+    store.updatedAt = new Date().toISOString();
+    this.stores.set(id, store);
+
+    return this._sanitizeStore(store);
+  }
+
+  /**
+   * Delete a store
+   */
+  async deleteStore(id) {
+    if (!this.stores.has(id)) {
+      const err = new Error(`Store with id '${id}' not found`);
+      err.statusCode = 404;
+      throw err;
+    }
+    this.stores.delete(id);
+    return true;
+  }
+
+  /**
+   * Store login validating email/password and active status
+   */
+  async loginStore(email, password) {
+    if (!email || !password) {
+      const err = new Error('Email and password are required');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const store = await this.getStoreByEmail(email);
+    if (!store || store.password !== password) {
+      const err = new Error('Invalid email or password');
+      err.statusCode = 401;
+      throw err;
+    }
+
+    if (store.status === 'SUSPENDED') {
+      const err = new Error('Store account is suspended. Please contact administrator.');
+      err.statusCode = 403;
+      throw err;
+    }
+
+    const token = `store-token-${crypto.randomBytes(16).toString('hex')}`;
+    return {
+      token,
+      store: {
+        id: store.id,
+        name: store.name,
+        email: store.email,
+        status: store.status
+      }
+    };
+  }
+
+  /**
+   * Super Admin login
+   */
+  async loginAdmin(email, password) {
+    if (!email || !password) {
+      const err = new Error('Email and password are required');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const adminEmail = process.env.ADMIN_EMAIL || 'admin@medigrid.com';
+    const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
+
+    if (email.trim().toLowerCase() !== adminEmail.toLowerCase() || password !== adminPassword) {
+      const err = new Error('Invalid admin email or password');
+      err.statusCode = 401;
+      throw err;
+    }
+
+    const token = `admin-token-${crypto.randomBytes(16).toString('hex')}`;
+    return {
+      token,
+      admin: {
+        email: adminEmail,
+        role: 'SUPER_ADMIN'
+      }
+    };
+  }
+
+  // ==========================================
+  // PUBLIC LOCATION-BASED MEDICINE DISCOVERY
+  // ==========================================
+
+  /**
+   * Public Location-Based Medicine Discovery API
+   * Strict security: Masks internal confidential fields and excludes SUSPENDED stores
+   */
+  async publicSearchMedicines({ medicine, lat, lng, radius, city } = {}) {
+    const targetMedicine = (medicine || '').trim().toLowerCase();
+    const searchRadius = Number(radius ?? 15);
+    const targetCity = (city || '').trim().toLowerCase();
+
+    let searchLat = null;
+    let searchLng = null;
+
+    if (lat !== undefined && lat !== null && lng !== undefined && lng !== null) {
+      const parsedLat = parseFloat(lat);
+      const parsedLng = parseFloat(lng);
+      if (!isNaN(parsedLat) && !isNaN(parsedLng)) {
+        searchLat = parsedLat;
+        searchLng = parsedLng;
+      }
+    }
+
+    const results = [];
+
+    // Loop through registered stores
+    for (const store of this.stores.values()) {
+      // STRICT SECURITY: MUST NEVER return medicines from SUSPENDED stores
+      if (store.status !== 'ACTIVE') {
+        continue;
+      }
+
+      // Filter by city if specified
+      if (targetCity) {
+        if (!store.city || !store.city.toLowerCase().includes(targetCity)) {
+          continue;
+        }
+      }
+
+      // Calculate distance if coordinates provided
+      let distanceKm = null;
+      if (searchLat !== null && searchLng !== null && store.coordinates) {
+        const storeLat = store.coordinates.lat ?? store.coordinates.latitude;
+        const storeLng = store.coordinates.lng ?? store.coordinates.longitude;
+        if (storeLat !== undefined && storeLng !== undefined) {
+          distanceKm = this.calculateDistance(searchLat, searchLng, storeLat, storeLng);
+          if (distanceKm > searchRadius) {
+            continue; // Out of radius
+          }
+        }
+      }
+
+      // Find matching medicines for this store
+      for (const med of this.medicines.values()) {
+        if (med.storeId !== store.id) {
+          continue;
+        }
+
+        if (targetMedicine) {
+          const nameMatch = med.name && med.name.toLowerCase().includes(targetMedicine);
+          const genericMatch = med.genericName && med.genericName.toLowerCase().includes(targetMedicine);
+          if (!nameMatch && !genericMatch) {
+            continue;
+          }
+        }
+
+        // Determine stock status
+        let stockStatus = 'IN_STOCK';
+        const qty = Number(med.stockQuantity || 0);
+        const reorder = Number(med.reorderLevel || 10);
+        if (qty <= 0 || !med.inStock) {
+          stockStatus = 'OUT_OF_STOCK';
+        } else if (qty <= reorder) {
+          stockStatus = 'LOW_STOCK';
+        }
+
+        // PRIVACY & FIELD MASKING: Return ONLY appropriate public customer details
+        results.push({
+          storeId: store.id,
+          storeName: store.name,
+          storeAddress: store.address,
+          distanceKm: distanceKm !== null ? distanceKm : undefined,
+          storePhone: store.phone,
+          medicineName: med.name,
+          genericName: med.genericName,
+          price: med.price,
+          stockStatus,
+          inStock: qty > 0
+        });
+      }
+    }
+
+    // Sort stores by proximity (closest to furthest) if coordinates were provided
+    if (searchLat !== null && searchLng !== null) {
+      results.sort((a, b) => (a.distanceKm ?? Infinity) - (b.distanceKm ?? Infinity));
+    }
+
+    return results;
+  }
+
+  // ==========================================
+  // PHARMACY (LEGACY BACKWARD COMPATIBILITY)
+  // ==========================================
+
   async registerPharmacy(data) {
     if (!data || !data.name || typeof data.name !== 'string' || data.name.trim() === '') {
       throw new Error('Pharmacy name is required');
@@ -207,7 +641,10 @@ class PharmacyService {
       name: data.name.trim(),
       address: data.address || '',
       phone: data.phone || '',
-      coordinates,
+      coordinates: {
+        latitude: coordinates.latitude,
+        longitude: coordinates.longitude
+      },
       inventory: Array.isArray(data.inventory)
         ? data.inventory.map((item) => ({
             id: item.id || crypto.randomUUID(),
@@ -221,15 +658,12 @@ class PharmacyService {
       createdAt: data.createdAt || new Date().toISOString()
     };
 
-    // Save in memory
     this.pharmacies.set(id, pharmacy);
 
-    // Save to Redis if connected
     if (isRedisConnected()) {
       try {
         const redis = initRedis();
         if (redis) {
-          // GEOADD key longitude latitude member
           await redis.geoadd(
             this.REDIS_GEO_KEY,
             coordinates.longitude,
@@ -239,7 +673,6 @@ class PharmacyService {
           await redis.set(`pharmacy:${id}`, JSON.stringify(pharmacy));
         }
       } catch (err) {
-        // Fallback to in-memory on redis failure
         console.warn('Redis GEO indexing failed, using in-memory store:', err.message);
       }
     }
@@ -247,9 +680,6 @@ class PharmacyService {
     return pharmacy;
   }
 
-  /**
-   * Find pharmacies nearby within radius (in km), optionally filtering by medicine
-   */
   async findNearbyPharmacies({ latitude, longitude, lat, lng, radiusKm, radius, medicineName, medicine }) {
     const searchLat = latitude ?? lat;
     const searchLng = longitude ?? lng;
@@ -313,33 +743,23 @@ class PharmacyService {
       }
     }
 
-    // Sort by proximity ascending
     nearbyList.sort((a, b) => a.distanceKm - b.distanceKm);
-
     return nearbyList;
   }
 
-  /**
-   * Get pharmacy by ID
-   */
   async getPharmacyById(id) {
     const pharmacy = this.pharmacies.get(id);
-    if (!pharmacy) {
-      return null;
-    }
-    return pharmacy;
+    return pharmacy || null;
   }
 
-  /**
-   * Get all pharmacies
-   */
   async getAllPharmacies() {
     return Array.from(this.pharmacies.values());
   }
 
-  /**
-   * Add a medicine to the catalog (multi-tenant ready schema)
-   */
+  // ==========================================
+  // MEDICINE CATALOG & INVENTORY APIs
+  // ==========================================
+
   async addMedicine(medicineData) {
     if (!medicineData || !medicineData.name || typeof medicineData.name !== 'string' || medicineData.name.trim() === '') {
       const err = new Error('Medicine name is required');
@@ -383,10 +803,6 @@ class PharmacyService {
     return medicine;
   }
 
-  /**
-   * Public search returning matching medicines by name or genericName
-   * with real-time stockQuantity, inStock, and price
-   */
   async searchMedicines({ query, storeId } = {}) {
     const q = (query || '').trim().toLowerCase();
     const results = [];
@@ -404,7 +820,6 @@ class PharmacyService {
         }
       }
 
-      // Return medicine with real-time inStock
       results.push({
         ...medicine,
         inStock: medicine.stockQuantity > 0
@@ -414,17 +829,11 @@ class PharmacyService {
     return results;
   }
 
-  /**
-   * Get single medicine by ID
-   */
   async getMedicineById(id) {
     if (!id) return null;
     return this.medicines.get(id) || null;
   }
 
-  /**
-   * List medicines filtered optionally by storeId and category
-   */
   async listMedicines({ storeId, category } = {}) {
     const results = [];
     const targetCat = (category || '').trim().toLowerCase();
@@ -445,9 +854,6 @@ class PharmacyService {
     return results;
   }
 
-  /**
-   * Update medicine fields
-   */
   async updateMedicine(id, updateData = {}) {
     const medicine = this.medicines.get(id);
     if (!medicine) {
@@ -485,14 +891,17 @@ class PharmacyService {
     return medicine;
   }
 
-  /**
-   * Adjust medicine stock: DEDUCT or RESTOCK
-   */
-  async adjustStock(id, { action, quantity } = {}) {
+  async adjustStock(id, { action, quantity, storeId } = {}) {
     const medicine = this.medicines.get(id);
     if (!medicine) {
       const err = new Error(`Medicine with id '${id}' not found`);
       err.statusCode = 404;
+      throw err;
+    }
+
+    if (storeId && medicine.storeId !== storeId) {
+      const err = new Error(`Medicine '${id}' does not belong to store '${storeId}'`);
+      err.statusCode = 403;
       throw err;
     }
 
@@ -528,12 +937,10 @@ class PharmacyService {
     return medicine;
   }
 
-  /**
-   * Clear in-memory storage (useful for testing)
-   */
   clear() {
     this.pharmacies.clear();
     this.medicines.clear();
+    this.stores.clear();
   }
 }
 
