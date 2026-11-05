@@ -4,6 +4,7 @@ const { initRedis, isRedisConnected } = require('../config/redis');
 class PharmacyService {
   constructor() {
     this.pharmacies = new Map();
+    this.medicines = new Map();
     this.REDIS_GEO_KEY = 'pharmacies:geo';
   }
 
@@ -226,10 +227,202 @@ class PharmacyService {
   }
 
   /**
+   * Add a medicine to the catalog (multi-tenant ready schema)
+   */
+  async addMedicine(medicineData) {
+    if (!medicineData || !medicineData.name || typeof medicineData.name !== 'string' || medicineData.name.trim() === '') {
+      const err = new Error('Medicine name is required');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const id = medicineData.id || crypto.randomUUID();
+    const storeId = medicineData.storeId || 'store-001';
+    const name = medicineData.name.trim();
+    const genericName = (medicineData.genericName || '').trim();
+    const category = (medicineData.category || 'General').trim();
+    const batchNumber = (medicineData.batchNumber || '').trim();
+    const expiryDate = medicineData.expiryDate || '';
+    const price = typeof medicineData.price === 'number' ? medicineData.price : Number(medicineData.price || 0);
+    const stockQuantity = typeof medicineData.stockQuantity === 'number' ? medicineData.stockQuantity : Number(medicineData.stockQuantity || 0);
+    const reorderLevel = typeof medicineData.reorderLevel === 'number' ? medicineData.reorderLevel : Number(medicineData.reorderLevel ?? 10);
+    const inStock = medicineData.inStock !== undefined ? Boolean(medicineData.inStock) : stockQuantity > 0;
+    const locationRack = (medicineData.locationRack || '').trim();
+    const createdAt = medicineData.createdAt || new Date().toISOString();
+    const updatedAt = new Date().toISOString();
+
+    const medicine = {
+      id,
+      storeId,
+      name,
+      genericName,
+      category,
+      batchNumber,
+      expiryDate,
+      price,
+      stockQuantity,
+      reorderLevel,
+      inStock,
+      locationRack,
+      createdAt,
+      updatedAt
+    };
+
+    this.medicines.set(id, medicine);
+    return medicine;
+  }
+
+  /**
+   * Public search returning matching medicines by name or genericName
+   * with real-time stockQuantity, inStock, and price
+   */
+  async searchMedicines({ query, storeId } = {}) {
+    const q = (query || '').trim().toLowerCase();
+    const results = [];
+
+    for (const medicine of this.medicines.values()) {
+      if (storeId && medicine.storeId !== storeId) {
+        continue;
+      }
+
+      if (q) {
+        const nameMatch = medicine.name && medicine.name.toLowerCase().includes(q);
+        const genericMatch = medicine.genericName && medicine.genericName.toLowerCase().includes(q);
+        if (!nameMatch && !genericMatch) {
+          continue;
+        }
+      }
+
+      // Return medicine with real-time inStock
+      results.push({
+        ...medicine,
+        inStock: medicine.stockQuantity > 0
+      });
+    }
+
+    return results;
+  }
+
+  /**
+   * Get single medicine by ID
+   */
+  async getMedicineById(id) {
+    if (!id) return null;
+    return this.medicines.get(id) || null;
+  }
+
+  /**
+   * List medicines filtered optionally by storeId and category
+   */
+  async listMedicines({ storeId, category } = {}) {
+    const results = [];
+    const targetCat = (category || '').trim().toLowerCase();
+
+    for (const medicine of this.medicines.values()) {
+      if (storeId && medicine.storeId !== storeId) {
+        continue;
+      }
+      if (targetCat && (!medicine.category || medicine.category.toLowerCase() !== targetCat)) {
+        continue;
+      }
+      results.push({
+        ...medicine,
+        inStock: medicine.stockQuantity > 0
+      });
+    }
+
+    return results;
+  }
+
+  /**
+   * Update medicine fields
+   */
+  async updateMedicine(id, updateData = {}) {
+    const medicine = this.medicines.get(id);
+    if (!medicine) {
+      return null;
+    }
+
+    if (updateData.name !== undefined) {
+      if (typeof updateData.name !== 'string' || updateData.name.trim() === '') {
+        const err = new Error('Medicine name cannot be empty');
+        err.statusCode = 400;
+        throw err;
+      }
+      medicine.name = updateData.name.trim();
+    }
+    if (updateData.genericName !== undefined) medicine.genericName = (updateData.genericName || '').trim();
+    if (updateData.category !== undefined) medicine.category = (updateData.category || '').trim();
+    if (updateData.batchNumber !== undefined) medicine.batchNumber = (updateData.batchNumber || '').trim();
+    if (updateData.expiryDate !== undefined) medicine.expiryDate = updateData.expiryDate;
+    if (updateData.price !== undefined) {
+      medicine.price = typeof updateData.price === 'number' ? updateData.price : Number(updateData.price);
+    }
+    if (updateData.stockQuantity !== undefined) {
+      medicine.stockQuantity = typeof updateData.stockQuantity === 'number' ? updateData.stockQuantity : Number(updateData.stockQuantity);
+    }
+    if (updateData.reorderLevel !== undefined) {
+      medicine.reorderLevel = typeof updateData.reorderLevel === 'number' ? updateData.reorderLevel : Number(updateData.reorderLevel);
+    }
+    if (updateData.locationRack !== undefined) medicine.locationRack = (updateData.locationRack || '').trim();
+    if (updateData.storeId !== undefined) medicine.storeId = updateData.storeId;
+
+    medicine.inStock = updateData.inStock !== undefined ? Boolean(updateData.inStock) : medicine.stockQuantity > 0;
+    medicine.updatedAt = new Date().toISOString();
+
+    this.medicines.set(id, medicine);
+    return medicine;
+  }
+
+  /**
+   * Adjust medicine stock: DEDUCT or RESTOCK
+   */
+  async adjustStock(id, { action, quantity } = {}) {
+    const medicine = this.medicines.get(id);
+    if (!medicine) {
+      const err = new Error(`Medicine with id '${id}' not found`);
+      err.statusCode = 404;
+      throw err;
+    }
+
+    const numQty = Number(quantity);
+    if (isNaN(numQty) || numQty <= 0 || !Number.isInteger(numQty)) {
+      const err = new Error('Quantity must be a positive integer');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const act = (action || '').trim().toUpperCase();
+    if (act !== 'DEDUCT' && act !== 'RESTOCK') {
+      const err = new Error(`Invalid stock adjustment action: '${action}'. Must be DEDUCT or RESTOCK`);
+      err.statusCode = 400;
+      throw err;
+    }
+
+    if (act === 'DEDUCT') {
+      if (medicine.stockQuantity < numQty) {
+        const err = new Error(`Insufficient stock for medicine '${medicine.name}'. Available: ${medicine.stockQuantity}, Requested: ${numQty}`);
+        err.statusCode = 409;
+        throw err;
+      }
+      medicine.stockQuantity -= numQty;
+    } else if (act === 'RESTOCK') {
+      medicine.stockQuantity += numQty;
+    }
+
+    medicine.inStock = medicine.stockQuantity > 0;
+    medicine.updatedAt = new Date().toISOString();
+    this.medicines.set(id, medicine);
+
+    return medicine;
+  }
+
+  /**
    * Clear in-memory storage (useful for testing)
    */
   clear() {
     this.pharmacies.clear();
+    this.medicines.clear();
   }
 }
 
