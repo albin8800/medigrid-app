@@ -20,6 +20,21 @@ class OrderService {
   constructor() {
     this.stockChecker = null;
     this.stockReleaser = null;
+    this.stockDeductor = null;
+  }
+
+  /**
+   * Set a custom stock deductor stub (e.g. for testing)
+   */
+  setStockDeductor(deductorFn) {
+    this.stockDeductor = deductorFn;
+  }
+
+  /**
+   * Reset stock deductor stub to default
+   */
+  resetStockDeductor() {
+    this.stockDeductor = null;
   }
 
   /**
@@ -441,12 +456,204 @@ class OrderService {
   }
 
   /**
+   * Deduct stock for a medicine item via catalog service stub or HTTP call
+   */
+  async deductStock(medicineId, quantity) {
+    if (typeof this.stockDeductor === 'function') {
+      return await this.stockDeductor(medicineId, quantity);
+    }
+
+    const catalogUrl =
+      process.env.CATALOG_SERVICE_URL ||
+      process.env.PHARMACY_SERVICE_URL ||
+      'http://localhost:5001';
+
+    try {
+      const response = await axios.patch(
+        `${catalogUrl}/api/v1/medicines/${medicineId}/stock`,
+        { action: 'DEDUCT', quantity },
+        { timeout: 3000 }
+      );
+      return response.data;
+    } catch (err) {
+      if (err.response) {
+        const error = new Error(
+          err.response.data?.error || `Stock deduction failed for medicine ${medicineId}`
+        );
+        error.statusCode = err.response.status || 500;
+        throw error;
+      }
+      const error = new Error(
+        `Stock deduction failed for medicine ${medicineId}: ${err.message}`
+      );
+      error.statusCode = 500;
+      throw error;
+    }
+  }
+
+  /**
+   * Persist bill to database or mock store
+   */
+  async _persistBill(bill) {
+    if (!db.isMockMode() && process.env.DATABASE_URL) {
+      try {
+        const pool = db.getPool() || db.initDb();
+        if (pool) {
+          const sql = `
+            INSERT INTO bills (bill_id, store_id, customer_name, customer_phone, payment_method, items, subtotal, discount_amount, tax_amount, final_total, status, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+            ON CONFLICT (bill_id) DO UPDATE SET
+              status = EXCLUDED.status,
+              updated_at = EXCLUDED.updated_at
+            RETURNING *;
+          `;
+          await pool.query(sql, [
+            bill.billId,
+            bill.storeId,
+            bill.customerName,
+            bill.customerPhone,
+            bill.paymentMethod,
+            JSON.stringify(bill.items),
+            bill.subtotal,
+            bill.discountAmount,
+            bill.taxAmount,
+            bill.finalTotal,
+            bill.status,
+            bill.createdAt,
+            bill.updatedAt
+          ]);
+        }
+      } catch (err) {
+        console.warn('Postgres bill persist failed, using mock store:', err.message);
+      }
+    }
+    return db.mockStore.saveBill(bill);
+  }
+
+  /**
+   * Create POS in-store bill receipt
+   */
+  async createBill({ storeId, customerName, customerPhone, paymentMethod, items, discountAmount } = {}) {
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      const err = new Error('Bill items must be a non-empty array');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const normalizedItems = items.map((item, index) => {
+      const medicineId = item.medicineId || item.id;
+      if (!medicineId || (typeof medicineId === 'string' && medicineId.trim() === '')) {
+        const err = new Error(`Item at index ${index} is missing medicineId`);
+        err.statusCode = 400;
+        throw err;
+      }
+
+      const medicineName = (item.medicineName || item.medicine || item.name || `Medicine ${medicineId}`).trim();
+
+      const quantity = Number(item.quantity);
+      if (isNaN(quantity) || quantity <= 0 || !Number.isInteger(quantity)) {
+        const err = new Error(`Item '${medicineName}' quantity must be a positive integer`);
+        err.statusCode = 400;
+        throw err;
+      }
+
+      const unitPrice = Number(item.unitPrice ?? item.price ?? 0);
+      if (isNaN(unitPrice) || unitPrice < 0) {
+        const err = new Error(`Item '${medicineName}' unit price must be a non-negative number`);
+        err.statusCode = 400;
+        throw err;
+      }
+
+      const subtotal = Math.round(quantity * unitPrice * 100) / 100;
+
+      return {
+        medicineId: String(medicineId).trim(),
+        medicineName,
+        quantity,
+        unitPrice,
+        subtotal
+      };
+    });
+
+    // Deduct stock for each item via catalog service stub / HTTP client
+    for (const item of normalizedItems) {
+      await this.deductStock(item.medicineId, item.quantity);
+    }
+
+    // Financial calculations
+    const subtotal =
+      Math.round(
+        normalizedItems.reduce((sum, item) => sum + item.subtotal, 0) * 100
+      ) / 100;
+
+    const rawDiscount = typeof discountAmount === 'number' ? discountAmount : Number(discountAmount || 0);
+    const validDiscount = isNaN(rawDiscount) || rawDiscount < 0 ? 0 : rawDiscount;
+    const discount = Math.min(validDiscount, subtotal);
+
+    const taxableAmount = Math.round((subtotal - discount) * 100) / 100;
+    const taxAmount = Math.round(taxableAmount * 0.05 * 100) / 100; // 5% GST
+    const finalTotal = Math.round((taxableAmount + taxAmount) * 100) / 100;
+
+    let billId = 'BILL-' + Date.now();
+    if (db.mockStore.getBill(billId)) {
+      billId = `BILL-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+    }
+    const now = new Date().toISOString();
+
+    const bill = {
+      billId,
+      storeId: storeId || 'store-001',
+      customerName: (customerName && customerName.trim()) || 'Walk-in Customer',
+      customerPhone: (customerPhone && customerPhone.trim()) || '',
+      paymentMethod: (paymentMethod && paymentMethod.trim().toUpperCase()) || 'CASH',
+      items: normalizedItems,
+      subtotal,
+      discountAmount: discount,
+      taxAmount,
+      finalTotal,
+      status: 'PAID',
+      createdAt: now,
+      updatedAt: now
+    };
+
+    return await this._persistBill(bill);
+  }
+
+  /**
+   * Get bill details by billId
+   */
+  async getBillById(billId) {
+    if (!billId) {
+      return null;
+    }
+    return db.mockStore.getBill(billId);
+  }
+
+  /**
+   * List all bills with total revenue metric
+   */
+  async listBills({ storeId } = {}) {
+    const bills = db.mockStore.listBills({ storeId });
+    const totalRevenue =
+      Math.round(
+        bills.reduce((sum, b) => sum + (Number(b.finalTotal) || 0), 0) * 100
+      ) / 100;
+
+    return {
+      bills,
+      totalRevenue,
+      count: bills.length
+    };
+  }
+
+  /**
    * Clear in-memory storage (for test isolation)
    */
   clear() {
     db.mockStore.clear();
     this.resetStockChecker();
     this.resetStockReleaser();
+    this.resetStockDeductor();
   }
 }
 

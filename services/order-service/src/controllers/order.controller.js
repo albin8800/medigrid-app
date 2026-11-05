@@ -150,11 +150,103 @@ async function listOrders(req, res, next) {
   }
 }
 
+/**
+ * POST /api/v1/bills: Create in-store POS bill and invoice
+ */
+async function createBill(req, res, next) {
+  try {
+    const bill = await orderService.createBill(req.body);
+    return res.status(201).json({
+      success: true,
+      data: bill
+    });
+  } catch (error) {
+    if (
+      error.statusCode === 409 ||
+      error.message.includes('Insufficient stock') ||
+      error.message.includes('Stock deduction failed')
+    ) {
+      return res.status(409).json({
+        success: false,
+        error: error.message
+      });
+    }
+
+    if (
+      error.statusCode === 400 ||
+      error.message.includes('required') ||
+      error.message.includes('must be') ||
+      error.message.includes('missing') ||
+      error.message.includes('array')
+    ) {
+      return res.status(400).json({
+        success: false,
+        error: error.message
+      });
+    }
+
+    if (error.statusCode === 404 || error.message.includes('not found')) {
+      return res.status(404).json({
+        success: false,
+        error: error.message
+      });
+    }
+
+    return next(error);
+  }
+}
+
+/**
+ * GET /api/v1/bills/:id: Get bill details by billId
+ */
+async function getBillById(req, res, next) {
+  try {
+    const { id } = req.params;
+    const bill = await orderService.getBillById(id);
+
+    if (!bill) {
+      return res.status(404).json({
+        success: false,
+        error: `Bill with id '${id}' not found`
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: bill
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+/**
+ * GET /api/v1/bills: List bills with aggregate metrics
+ */
+async function listBills(req, res, next) {
+  try {
+    const { storeId } = req.query;
+    const result = await orderService.listBills({ storeId });
+
+    return res.status(200).json({
+      success: true,
+      count: result.count,
+      totalRevenue: result.totalRevenue,
+      data: result.bills
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
 module.exports = {
   getHealth,
   getReadiness,
   createOrder,
   getOrderById,
   cancelOrder,
-  listOrders
+  listOrders,
+  createBill,
+  getBillById,
+  listBills
 };

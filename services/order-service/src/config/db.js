@@ -7,10 +7,12 @@ let isConnected = false;
 class InMemoryDb {
   constructor() {
     this.orders = new Map();
+    this.bills = new Map();
   }
 
   clear() {
     this.orders.clear();
+    this.bills.clear();
   }
 
   saveOrder(order) {
@@ -49,6 +51,28 @@ class InMemoryDb {
     // Sort descending by creation date
     results.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
     return results.map((o) => JSON.parse(JSON.stringify(o)));
+  }
+
+  saveBill(bill) {
+    this.bills.set(bill.billId, JSON.parse(JSON.stringify(bill)));
+    return this.bills.get(bill.billId);
+  }
+
+  getBill(billId) {
+    const bill = this.bills.get(billId);
+    return bill ? JSON.parse(JSON.stringify(bill)) : null;
+  }
+
+  listBills(filters = {}) {
+    let results = Array.from(this.bills.values());
+
+    if (filters.storeId) {
+      results = results.filter((b) => b.storeId === filters.storeId);
+    }
+
+    // Sort descending by creation date
+    results.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    return results.map((b) => JSON.parse(JSON.stringify(b)));
   }
 
   async query(text, params = []) {

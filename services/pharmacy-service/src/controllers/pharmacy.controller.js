@@ -130,11 +130,177 @@ async function getAllPharmacies(req, res, next) {
   }
 }
 
+/**
+ * Public search for medicines by query and/or storeId
+ */
+async function searchMedicines(req, res, next) {
+  try {
+    const { query, q, storeId } = req.query;
+    const results = await pharmacyService.searchMedicines({
+      query: query || q,
+      storeId
+    });
+
+    return res.status(200).json({
+      success: true,
+      count: results.length,
+      data: results
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+/**
+ * List medicines optionally filtered by storeId and/or category
+ */
+async function listMedicines(req, res, next) {
+  try {
+    const { storeId, category } = req.query;
+    const results = await pharmacyService.listMedicines({
+      storeId,
+      category
+    });
+
+    return res.status(200).json({
+      success: true,
+      count: results.length,
+      data: results
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+/**
+ * Get medicine by ID
+ */
+async function getMedicineById(req, res, next) {
+  try {
+    const { id } = req.params;
+    const medicine = await pharmacyService.getMedicineById(id);
+
+    if (!medicine) {
+      return res.status(404).json({
+        success: false,
+        error: `Medicine with id '${id}' not found`
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: medicine
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+/**
+ * Add a new medicine to catalog
+ */
+async function addMedicine(req, res, next) {
+  try {
+    const medicine = await pharmacyService.addMedicine(req.body);
+    return res.status(201).json({
+      success: true,
+      data: medicine
+    });
+  } catch (error) {
+    if (
+      error.statusCode === 400 ||
+      error.message.includes('required') ||
+      error.message.includes('invalid')
+    ) {
+      return res.status(400).json({
+        success: false,
+        error: error.message
+      });
+    }
+    return next(error);
+  }
+}
+
+/**
+ * Update medicine by ID
+ */
+async function updateMedicine(req, res, next) {
+  try {
+    const { id } = req.params;
+    const updated = await pharmacyService.updateMedicine(id, req.body);
+
+    if (!updated) {
+      return res.status(404).json({
+        success: false,
+        error: `Medicine with id '${id}' not found`
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: updated
+    });
+  } catch (error) {
+    if (error.statusCode === 400 || error.message.includes('empty')) {
+      return res.status(400).json({
+        success: false,
+        error: error.message
+      });
+    }
+    return next(error);
+  }
+}
+
+/**
+ * Adjust medicine stock (DEDUCT or RESTOCK)
+ */
+async function adjustStock(req, res, next) {
+  try {
+    const { id } = req.params;
+    const updated = await pharmacyService.adjustStock(id, req.body);
+
+    return res.status(200).json({
+      success: true,
+      data: updated
+    });
+  } catch (error) {
+    if (error.statusCode === 409 || error.message.includes('Insufficient stock')) {
+      return res.status(409).json({
+        success: false,
+        error: error.message
+      });
+    }
+    if (error.statusCode === 404 || error.message.includes('not found')) {
+      return res.status(404).json({
+        success: false,
+        error: error.message
+      });
+    }
+    if (
+      error.statusCode === 400 ||
+      error.message.includes('positive') ||
+      error.message.includes('Invalid stock adjustment action')
+    ) {
+      return res.status(400).json({
+        success: false,
+        error: error.message
+      });
+    }
+    return next(error);
+  }
+}
+
 module.exports = {
   getHealth,
   getReadiness,
   createPharmacy,
   getNearbyPharmacies,
   getPharmacyById,
-  getAllPharmacies
+  getAllPharmacies,
+  searchMedicines,
+  listMedicines,
+  getMedicineById,
+  addMedicine,
+  updateMedicine,
+  adjustStock
 };
