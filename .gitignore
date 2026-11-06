@@ -5,3 +5,7 @@ node_modules/
 coverage/
 dist/
 .DS_Store
+
+# Database Backups (Sensitive production dumps)
+backups/*
+!backups/.gitkeep
