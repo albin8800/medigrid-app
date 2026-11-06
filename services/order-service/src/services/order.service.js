@@ -198,7 +198,7 @@ class OrderService {
           if (!invItem || (invItem.quantity ?? 0) < item.quantity) {
             return {
               success: false,
-              reason: `Insufficient stock for medicine: ${item.medicine}`
+              reason: `Insufficient stock for medicine: ${item.medicine}. Available: ${invItem?.quantity ?? 0}, Requested: ${item.quantity}`
             };
           }
         }
@@ -219,9 +219,10 @@ class OrderService {
         item.inStock === false ||
         (typeof item.availableStock === 'number' && item.availableStock < item.quantity)
       ) {
+        const avail = typeof item.availableStock === 'number' ? item.availableStock : 0;
         return {
           success: false,
-          reason: `Insufficient stock for medicine: ${item.medicine}`
+          reason: `Insufficient stock for medicine: ${item.medicine}. Available: ${avail}, Requested: ${item.quantity}`
         };
       }
     }
@@ -616,7 +617,7 @@ class OrderService {
       throw err;
     }
 
-    const targetStoreId = storeId || 'store-001';
+    const targetStoreId = (typeof storeId === 'string' && storeId.trim()) ? storeId.trim() : (storeId || 'store-001');
     await this.verifyStoreActive(targetStoreId);
 
     const normalizedItems = items.map((item, index) => {
@@ -656,7 +657,19 @@ class OrderService {
 
     // Deduct stock for each item via catalog service stub / HTTP client
     for (const item of normalizedItems) {
-      await this.deductStock(item.medicineId, item.quantity, targetStoreId);
+      try {
+        await this.deductStock(item.medicineId, item.quantity, targetStoreId);
+      } catch (err) {
+        if (err.statusCode === 409 || err.statusCode === 400 || err.message?.includes('Insufficient stock')) {
+          if (!err.message?.includes(item.medicineName)) {
+            err.message = `Insufficient stock for medicine '${item.medicineName}'. ${err.message}`;
+          }
+          if (!err.statusCode) {
+            err.statusCode = 409;
+          }
+        }
+        throw err;
+      }
     }
 
     // Financial calculations

@@ -42,16 +42,22 @@ describe('Multi-Tenant Store & Public Discovery Unit Tests (pharmacy.service)', 
   });
 
   describe('Authentication & Tenant Scoping', () => {
-    it('should authenticate active store with valid credentials', async () => {
+    it('should authenticate active store with valid credentials and return all sanitized store details', async () => {
       const auth = await pharmacyService.loginStore('apollo.indiranagar@medigrid.com', 'store123');
       expect(auth).toBeDefined();
       expect(auth.token).toBeDefined();
-      expect(auth.store).toEqual({
+      expect(auth.store).toMatchObject({
         id: 'store-001',
         name: 'Apollo Pharmacy - Indiranagar',
         email: 'apollo.indiranagar@medigrid.com',
+        licenseNumber: 'KA-BLR-2023-001',
+        address: '100 Ft Rd, Indiranagar',
+        city: 'Bangalore',
+        phone: '+91-9876543210',
+        coordinates: { lat: 12.9784, lng: 77.6408 },
         status: 'ACTIVE'
       });
+      expect(auth.store.password).toBeUndefined();
     });
 
     it('should reject login with 403 if store is SUSPENDED', async () => {
@@ -227,6 +233,36 @@ describe('Multi-Tenant Store & Public Discovery Unit Tests (pharmacy.service)', 
 
       const fetched = await pharmacyService.getStoreById('store-003');
       expect(fetched).toBeNull();
+    });
+
+    it('should preserve custom city and not hardcode Bangalore when onboarding a store', async () => {
+      const newStore = await pharmacyService.registerStore({
+        name: 'Apollo Pharmacy - Mumbai Central',
+        licenseNumber: 'MH-MUM-2026-101',
+        address: 'Dr D.B. Marg, Mumbai Central',
+        city: 'Mumbai',
+        phone: '+91-9876543200',
+        email: 'apollo.mumbai@medigrid.com',
+        password: 'password123',
+        coordinates: { lat: 18.9696, lng: 72.8193 }
+      });
+
+      expect(newStore.city).toBe('Mumbai');
+      expect(newStore.licenseNumber).toBe('MH-MUM-2026-101');
+      expect(newStore.address).toBe('Dr D.B. Marg, Mumbai Central');
+      expect(newStore.phone).toBe('+91-9876543200');
+      expect(newStore.coordinates).toEqual({ lat: 18.9696, lng: 72.8193 });
+    });
+
+    it('should ensure getStoreById and _sanitizeStore retain all critical store properties', async () => {
+      const store = await pharmacyService.getStoreById('store-001');
+      expect(store).toBeDefined();
+      expect(store.licenseNumber).toBe('KA-BLR-2023-001');
+      expect(store.city).toBe('Bangalore');
+      expect(store.address).toBe('100 Ft Rd, Indiranagar');
+      expect(store.phone).toBe('+91-9876543210');
+      expect(store.coordinates).toEqual({ lat: 12.9784, lng: 77.6408 });
+      expect(store.password).toBeUndefined();
     });
   });
 

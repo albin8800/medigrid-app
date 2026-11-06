@@ -155,7 +155,11 @@ async function listOrders(req, res, next) {
  */
 async function createBill(req, res, next) {
   try {
-    const bill = await orderService.createBill(req.body);
+    const storeId = req.body?.storeId || req.query?.storeId || req.headers['x-store-id'];
+    const bill = await orderService.createBill({
+      ...req.body,
+      ...(storeId ? { storeId } : {})
+    });
     return res.status(201).json({
       success: true,
       data: bill

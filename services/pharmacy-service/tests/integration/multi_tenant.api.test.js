@@ -19,12 +19,18 @@ describe('Multi-Tenant Pharmacy API Integration Tests', () => {
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       expect(res.body.token).toBeDefined();
-      expect(res.body.store).toEqual({
+      expect(res.body.store).toMatchObject({
         id: 'store-001',
         name: 'Apollo Pharmacy - Indiranagar',
         email: 'apollo.indiranagar@medigrid.com',
+        licenseNumber: 'KA-BLR-2023-001',
+        address: '100 Ft Rd, Indiranagar',
+        city: 'Bangalore',
+        phone: '+91-9876543210',
+        coordinates: { lat: 12.9784, lng: 77.6408 },
         status: 'ACTIVE'
       });
+      expect(res.body.store.password).toBeUndefined();
     });
 
     it('POST /api/v1/auth/store/login: should reject a SUSPENDED store with HTTP 403', async () => {

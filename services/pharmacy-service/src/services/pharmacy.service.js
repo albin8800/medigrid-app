@@ -352,11 +352,25 @@ class PharmacyService {
 
   /**
    * Helper to sanitize store object (remove password)
+   * Ensures licenseNumber, city, address, phone, coordinates are never stripped or missing.
    */
   _sanitizeStore(store) {
     if (!store) return null;
     const { password, ...sanitized } = store;
-    return sanitized;
+    return {
+      id: sanitized.id,
+      name: sanitized.name,
+      licenseNumber: sanitized.licenseNumber || '',
+      address: sanitized.address || '',
+      city: sanitized.city || '',
+      phone: sanitized.phone || '',
+      email: sanitized.email || '',
+      coordinates: sanitized.coordinates || { lat: 0, lng: 0 },
+      status: sanitized.status || 'ACTIVE',
+      createdAt: sanitized.createdAt,
+      updatedAt: sanitized.updatedAt,
+      ...sanitized
+    };
   }
 
   // ==========================================
@@ -396,7 +410,7 @@ class PharmacyService {
       name: data.name.trim(),
       licenseNumber: (data.licenseNumber || `LIC-${Date.now()}`).trim(),
       address: (data.address || '').trim(),
-      city: (data.city || 'Bangalore').trim(),
+      city: (data.city || '').trim(),
       phone: (data.phone || '').trim(),
       email,
       password: this.hashPassword(data.password || 'store123'),
@@ -521,12 +535,7 @@ class PharmacyService {
     const token = `store-token-${crypto.randomBytes(16).toString('hex')}`;
     return {
       token,
-      store: {
-        id: store.id,
-        name: store.name,
-        email: store.email,
-        status: store.status
-      }
+      store: this._sanitizeStore(store)
     };
   }
 

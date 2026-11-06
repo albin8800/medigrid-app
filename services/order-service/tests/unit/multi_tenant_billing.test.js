@@ -59,6 +59,38 @@ describe('Multi-Tenant POS Billing & Analytics Unit Tests (order.service)', () =
       expect(passedMedicineId).toBe('med-augmentin-625');
       expect(passedQty).toBe(3);
     });
+
+    it('should strictly use custom active storeId and never fallback to store-001', async () => {
+      orderService.setStockDeductor(async () => ({ success: true }));
+      orderService.setStoreStatus('store-custom', 'ACTIVE');
+
+      const bill = await orderService.createBill({
+        storeId: 'store-custom',
+        customerName: 'Kavita',
+        items: [{ medicineId: 'med-01', medicineName: 'Dolo 650', quantity: 1, unitPrice: 30.0 }]
+      });
+
+      expect(bill.storeId).toBe('store-custom');
+      expect(bill.storeId).not.toBe('store-001');
+    });
+
+    it('should return 409 and clean error message containing medicine name when stock deduction fails', async () => {
+      orderService.setStockDeductor(async () => {
+        const err = new Error('Available: 2, Requested: 5');
+        err.statusCode = 409;
+        throw err;
+      });
+
+      const payload = {
+        storeId: 'store-001',
+        items: [{ medicineId: 'med-low', medicineName: 'Amoxicillin 500mg', quantity: 5, unitPrice: 50.0 }]
+      };
+
+      await expect(orderService.createBill(payload)).rejects.toMatchObject({
+        statusCode: 409,
+        message: expect.stringMatching(/Amoxicillin 500mg/)
+      });
+    });
   });
 
   describe('Platform-Wide Sales Analytics', () => {
