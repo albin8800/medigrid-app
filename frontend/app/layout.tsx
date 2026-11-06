@@ -35,15 +35,9 @@ export default function RootLayout({
                 <span className="inline-block h-2 w-2 rounded-full bg-emerald-500"></span>
                 <span>MediGrid Pharmacy Network &copy; {new Date().getFullYear()} &bull; Real-Time Medicine Availability</span>
               </span>
-              <div className="flex items-center gap-4 text-xs font-medium text-slate-500">
-                <a href="/store/login" className="hover:text-teal-700 hover:underline transition">
-                  Pharmacy Partner Login
-                </a>
-                <span>&bull;</span>
-                <a href="/admin/login" className="hover:text-blue-700 hover:underline transition">
-                  Platform Administration
-                </a>
-              </div>
+              <span className="text-slate-400">
+                In-Store Purchase Discovery &bull; Verified Independent Pharmacies
+              </span>
             </div>
           </footer>
         </AuthProvider>
