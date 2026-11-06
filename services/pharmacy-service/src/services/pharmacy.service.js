@@ -575,6 +575,37 @@ class PharmacyService {
   // ==========================================
 
   /**
+   * Flexible / Token-Aware Medicine Search Matcher
+   * Matches bidirectional substrings and word tokens (e.g. "Dolo" matches "Dolo 650", "Dolo 650" matches "Dolo")
+   */
+  matchesMedicine(med, searchQuery) {
+    if (!searchQuery) return true;
+    const q = (searchQuery || '').trim().toLowerCase();
+    if (!q) return true;
+
+    const name = (med.name || '').trim().toLowerCase();
+    const generic = (med.genericName || '').trim().toLowerCase();
+
+    // 1. Exact or substring match in either direction
+    if (name && (name.includes(q) || q.includes(name))) return true;
+    if (generic && (generic.includes(q) || q.includes(generic))) return true;
+
+    // 2. Token / word boundary matching
+    const qTokens = q.split(/[\s\-_,./]+/).filter((t) => t.length > 0);
+    const medTokens = `${name} ${generic}`.split(/[\s\-_,./]+/).filter((t) => t.length > 0);
+
+    const nonNumericQTokens = qTokens.filter((t) => isNaN(Number(t)));
+    if (nonNumericQTokens.length > 0) {
+      const match = nonNumericQTokens.some((qt) =>
+        medTokens.some((mt) => mt.includes(qt) || qt.includes(mt))
+      );
+      if (match) return true;
+    }
+
+    return qTokens.some((qt) => medTokens.some((mt) => mt.includes(qt) || qt.includes(mt)));
+  }
+
+  /**
    * Public Location-Based Medicine Discovery API
    * Strict security: Masks internal confidential fields and excludes SUSPENDED stores
    */
@@ -626,18 +657,17 @@ class PharmacyService {
       }
 
       // Find matching medicines for this store
+      let storeMedicineMatches = 0;
       for (const med of this.medicines.values()) {
         if (med.storeId !== store.id) {
           continue;
         }
 
-        if (targetMedicine) {
-          const nameMatch = med.name && med.name.toLowerCase().includes(targetMedicine);
-          const genericMatch = med.genericName && med.genericName.toLowerCase().includes(targetMedicine);
-          if (!nameMatch && !genericMatch) {
-            continue;
-          }
+        if (targetMedicine && !this.matchesMedicine(med, targetMedicine)) {
+          continue;
         }
+
+        storeMedicineMatches++;
 
         // Determine stock status
         let stockStatus = 'IN_STOCK';
@@ -661,6 +691,22 @@ class PharmacyService {
           price: med.price,
           stockStatus,
           inStock: qty > 0
+        });
+      }
+
+      // If default search (no medicine query provided), also list the store itself so user sees nearby pharmacies
+      if (!targetMedicine && storeMedicineMatches === 0) {
+        results.push({
+          storeId: store.id,
+          storeName: store.name,
+          storeAddress: store.address,
+          distanceKm: distanceKm !== null ? distanceKm : undefined,
+          storePhone: store.phone,
+          medicineName: 'Full Pharmacy Counter',
+          genericName: 'All General & Prescription Medicines Available In-Store',
+          price: 0,
+          stockStatus: 'IN_STOCK',
+          inStock: true
         });
       }
     }
@@ -861,12 +907,8 @@ class PharmacyService {
         continue;
       }
 
-      if (q) {
-        const nameMatch = medicine.name && medicine.name.toLowerCase().includes(q);
-        const genericMatch = medicine.genericName && medicine.genericName.toLowerCase().includes(q);
-        if (!nameMatch && !genericMatch) {
-          continue;
-        }
+      if (q && !this.matchesMedicine(medicine, q)) {
+        continue;
       }
 
       results.push({

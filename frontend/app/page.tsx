@@ -35,7 +35,7 @@ const QUICK_SUGGESTIONS = [
 ];
 
 export default function PublicDiscoveryPage() {
-  const [query, setQuery] = useState('Dolo 650');
+  const [query, setQuery] = useState('');
   const [coords, setCoords] = useState<{ lat: number; lng: number }>(DEFAULT_COORDS);
   const [locationLabel, setLocationLabel] = useState('Bangalore (12.9784, 77.6408)');
   const [cityInput, setCityInput] = useState('');
@@ -278,7 +278,7 @@ export default function PublicDiscoveryPage() {
       <div className="max-w-4xl mx-auto flex items-center justify-between">
         <div className="flex items-center gap-2">
           <h2 className="text-lg font-bold text-slate-900">
-            Available at Nearby Pharmacies
+            {query.trim() ? `Pharmacies with "${query.trim()}"` : 'Nearby Medical Stores'}
           </h2>
           <span className="px-2 py-0.5 rounded-full text-xs font-mono font-medium bg-slate-200 text-slate-700">
             {results.length} {results.length === 1 ? 'store' : 'stores'} found
@@ -308,10 +308,10 @@ export default function PublicDiscoveryPage() {
               <StoreIcon className="h-6 w-6" />
             </div>
             <h3 className="text-base font-semibold text-slate-900">
-              No medical stores found carrying &ldquo;{query}&rdquo;
+              {query.trim() ? `No medical stores found carrying "${query}"` : 'No medical stores found in this area'}
             </h3>
             <p className="text-xs text-slate-500 max-w-md mx-auto">
-              Try searching with another brand name, increasing the search radius, or clearing the city filter.
+              Try searching with another medicine brand or generic name, increasing the search radius, or selecting a different city.
             </p>
           </div>
         ) : (
@@ -350,14 +350,14 @@ export default function PublicDiscoveryPage() {
                     ) : (
                       <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
                         <CheckCircle2 className="h-3 w-3 text-emerald-500" />
-                        <span>🟢 In Stock</span>
+                        <span>🟢 {item.medicineName === 'Full Pharmacy Counter' ? 'Pharmacy Open' : 'In Stock'}</span>
                       </span>
                     )}
                   </div>
 
                   <div className="flex items-baseline gap-2 flex-wrap">
                     <span className="font-semibold text-slate-800 text-sm">
-                      {item.medicineName}
+                      {item.medicineName === 'Full Pharmacy Counter' ? '🏪 Verified Medical Store' : item.medicineName}
                     </span>
                     {item.genericName && (
                       <span className="text-xs text-slate-500 italic">
@@ -376,7 +376,7 @@ export default function PublicDiscoveryPage() {
                 <div className="flex md:flex-col items-center md:items-end justify-between gap-3 pt-3 md:pt-0 border-t md:border-t-0 border-slate-100">
                   <div className="text-left md:text-right">
                     <div className="text-xl font-bold font-mono tabular-nums text-slate-900">
-                      {formatINR(item.price)}
+                      {item.price > 0 ? formatINR(item.price) : 'In-Store POS'}
                     </div>
                     <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-500">
                       <ShoppingBag className="h-3 w-3 text-slate-400" />

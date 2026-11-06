@@ -88,6 +88,33 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
 // 1. PUBLIC LOCATION-BASED MEDICINE DISCOVERY
 // =========================================================================
 
+export function matchesMedicineSearch(name: string, genericName: string, query: string): boolean {
+  if (!query) return true;
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+
+  const n = (name || '').trim().toLowerCase();
+  const g = (genericName || '').trim().toLowerCase();
+
+  // 1. Direct or bidirectional substring match (e.g. "Dolo" matches "Dolo 650" and vice versa)
+  if (n && (n.includes(q) || q.includes(n))) return true;
+  if (g && (g.includes(q) || q.includes(g))) return true;
+
+  // 2. Tokenized word boundary matching
+  const qTokens = q.split(/[\s\-_,./]+/).filter((t) => t.length > 0);
+  const medTokens = `${n} ${g}`.split(/[\s\-_,./]+/).filter((t) => t.length > 0);
+
+  const nonNumericQTokens = qTokens.filter((t) => isNaN(Number(t)));
+  if (nonNumericQTokens.length > 0) {
+    const match = nonNumericQTokens.some((qt) =>
+      medTokens.some((mt) => mt.includes(qt) || qt.includes(mt))
+    );
+    if (match) return true;
+  }
+
+  return qTokens.some((qt) => medTokens.some((mt) => mt.includes(qt) || qt.includes(mt)));
+}
+
 export interface PublicSearchParams {
   medicine?: string;
   lat?: number;
@@ -155,14 +182,14 @@ export async function searchPublicMedicines(
     }
 
     // Match medicines
+    let storeMedicineMatches = 0;
     for (const med of medicines) {
       if (med.storeId !== store.id) continue;
 
-      if (searchMedicine) {
-        const nameMatch = med.name.toLowerCase().includes(searchMedicine);
-        const genericMatch = med.genericName.toLowerCase().includes(searchMedicine);
-        if (!nameMatch && !genericMatch) continue;
+      if (searchMedicine && !matchesMedicineSearch(med.name, med.genericName, searchMedicine)) {
+        continue;
       }
+      storeMedicineMatches++;
 
       let stockStatus: 'IN_STOCK' | 'LOW_STOCK' | 'OUT_OF_STOCK' = 'IN_STOCK';
       if (med.stockQuantity <= 0 || !med.inStock) {
@@ -183,6 +210,22 @@ export async function searchPublicMedicines(
         price: med.price,
         stockStatus,
         inStock: med.stockQuantity > 0,
+      });
+    }
+
+    // If default search (no medicine query provided), also list the store itself so user sees nearby pharmacies
+    if (!searchMedicine && storeMedicineMatches === 0) {
+      results.push({
+        storeId: store.id,
+        storeName: store.name,
+        storeAddress: store.address,
+        distanceKm,
+        storePhone: store.phone,
+        medicineName: 'Full Pharmacy Counter',
+        genericName: 'All General & Prescription Medicines Available In-Store',
+        price: 0,
+        stockStatus: 'IN_STOCK',
+        inStock: true,
       });
     }
   }
@@ -382,6 +425,20 @@ export async function createBill(payload: CreateBillPayload): Promise<{ data: Bi
 
     if (res.ok) {
       const json = await res.json();
+      try {
+        const stored = getStoredMedicines();
+        for (const item of payload.items) {
+          const med = stored.find((m) => m.id === item.medicineId);
+          if (med) {
+            med.stockQuantity = Math.max(0, med.stockQuantity - item.quantity);
+            med.inStock = med.stockQuantity > 0;
+            med.updatedAt = new Date().toISOString();
+          }
+        }
+        saveStoredMedicines(stored);
+      } catch {
+        // ignore
+      }
       return { data: json.data, source: 'api' };
     }
   } catch {

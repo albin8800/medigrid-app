@@ -22,7 +22,7 @@ import {
   FileCheck,
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
-import { listStoreMedicines, createBill } from '@/lib/api';
+import { listStoreMedicines, createBill, adjustMedicineStock, matchesMedicineSearch } from '@/lib/api';
 import { Medicine, Bill, PaymentMethod } from '@/lib/types';
 import { formatINR, cn } from '@/lib/utils';
 
@@ -177,10 +177,30 @@ export default function StorePOSPage() {
         })),
       });
 
+      // 1. Instantly update live UI state so inventory quantities drop immediately on screen
+      const currentCart = [...cart];
+      setMedicines((prev) =>
+        prev.map((m) => {
+          const sold = currentCart.find((c) => c.medicineId === m.id);
+          if (sold) {
+            const newQty = Math.max(0, m.stockQuantity - sold.quantity);
+            return { ...m, stockQuantity: newQty, inStock: newQty > 0 };
+          }
+          return m;
+        })
+      );
+
+      // 2. Ensure both API backend and local fallback storage reflect stock deduction
+      for (const item of currentCart) {
+        try {
+          await adjustMedicineStock(item.medicineId, 'DEDUCT', item.quantity);
+        } catch {
+          // Handled if order-service already deducted
+        }
+      }
+
       setCompletedBill(res.data);
-      // Reload store inventory to reflect live stock deduction
       loadCatalog();
-      // Reset register
       clearRegister();
     } catch (err: any) {
       setPosError(err.message || 'Billing transaction failed.');
@@ -203,8 +223,7 @@ export default function StorePOSPage() {
     const q = catalogSearch.trim().toLowerCase();
     if (!q) return true;
     return (
-      m.name.toLowerCase().includes(q) ||
-      m.genericName.toLowerCase().includes(q) ||
+      matchesMedicineSearch(m.name, m.genericName, q) ||
       m.category.toLowerCase().includes(q)
     );
   });
@@ -638,27 +657,35 @@ export default function StorePOSPage() {
               </div>
             </div>
 
-            <div className="text-center text-[10px] text-slate-400 pt-2 border-t border-dashed border-slate-200">
-              Inventory stock automatically deducted from {store.id}.
-              <br />
-              Thank you for trusting MediGrid Healthcare!
+            <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-[11px] font-sans flex items-center gap-2">
+              <FileCheck className="h-4 w-4 text-emerald-600 shrink-0" />
+              <span>
+                <strong>Stock Reduced:</strong> Register sale completed and inventory quantities decremented in real time.
+              </span>
             </div>
 
             <div className="pt-2 flex items-center justify-end gap-2">
               <button
                 type="button"
-                onClick={() => setCompletedBill(null)}
-                className="px-4 py-2 rounded-lg border border-slate-200 text-xs font-sans font-medium text-slate-600 hover:bg-slate-50"
+                onClick={() => {
+                  setCompletedBill(null);
+                  loadCatalog();
+                }}
+                className="px-4 py-2.5 rounded-xl border border-slate-300 text-xs font-sans font-medium text-slate-700 hover:bg-slate-100 transition shadow-2xs"
               >
-                Close Slip
+                ✓ Close Slip (No Print)
               </button>
               <button
                 type="button"
-                onClick={() => window.print()}
-                className="px-4 py-2 rounded-lg bg-teal-600 hover:bg-teal-700 text-white text-xs font-sans font-semibold flex items-center gap-1.5"
+                onClick={() => {
+                  window.print();
+                  setCompletedBill(null);
+                  loadCatalog();
+                }}
+                className="px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-sans font-semibold flex items-center gap-1.5 transition shadow-2xs"
               >
                 <Printer className="h-3.5 w-3.5" />
-                <span>Print Tax Invoice</span>
+                <span>Print & Close Slip</span>
               </button>
             </div>
           </div>
