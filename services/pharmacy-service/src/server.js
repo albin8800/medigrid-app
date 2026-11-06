@@ -1,7 +1,10 @@
 const app = require('./app');
 const { closeRedis } = require('./config/redis');
 
-const PORT = process.env.PORT || 5001;
+const PORT = process.env.PORT || process.env.PHARMACY_SERVICE_PORT;
+if (!PORT) {
+  throw new Error('PORT environment variable is required (please configure PORT in .env)');
+}
 
 const server = app.listen(PORT, () => {
   console.log(`Pharmacy service listening on port ${PORT}`);

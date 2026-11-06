@@ -402,20 +402,10 @@ export async function adminLoginApi(email: string, password: string): Promise<Ad
       admin: json.admin,
     };
   } catch (err: any) {
-    if (err.message && (err.message.includes('Invalid') || err.message.includes('required'))) {
+    if (err.message) {
       throw err;
     }
-
-    if (email.trim().toLowerCase() === 'admin@medigrid.com' && password === 'admin123') {
-      return {
-        token: 'admin-token-demo-super',
-        admin: {
-          email: 'admin@medigrid.com',
-          role: 'SUPER_ADMIN',
-        },
-      };
-    }
-    throw new Error('Invalid admin email or password');
+    throw new Error('Super Admin authentication failed');
   }
 }
 

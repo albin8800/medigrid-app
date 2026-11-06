@@ -68,7 +68,7 @@ class OrderService {
     }
 
     const catalogUrl = process.env.CATALOG_SERVICE_URL || process.env.PHARMACY_SERVICE_URL;
-    if (catalogUrl) {
+    if (catalogUrl && process.env.NODE_ENV !== 'test') {
       try {
         const response = await axios.get(`${catalogUrl}/api/v1/admin/stores/${storeId}`, { timeout: 3000 });
         const store = response.data?.data || response.data;
@@ -179,8 +179,8 @@ class OrderService {
       return await this.stockChecker(pharmacyId, items);
     }
 
-    // 2. Inter-service HTTP check if PHARMACY_SERVICE_URL configured
-    if (process.env.PHARMACY_SERVICE_URL) {
+    // 2. Inter-service HTTP check if PHARMACY_SERVICE_URL configured (disabled in unit test mode)
+    if (process.env.PHARMACY_SERVICE_URL && process.env.NODE_ENV !== 'test') {
       try {
         const response = await axios.get(
           `${process.env.PHARMACY_SERVICE_URL}/api/v1/pharmacies/${pharmacyId}`,
@@ -542,8 +542,13 @@ class OrderService {
 
     const catalogUrl =
       process.env.CATALOG_SERVICE_URL ||
-      process.env.PHARMACY_SERVICE_URL ||
-      'http://localhost:5001';
+      process.env.PHARMACY_SERVICE_URL;
+
+    if (!catalogUrl) {
+      const error = new Error('Pharmacy catalog service URL not configured in environment (PHARMACY_SERVICE_URL)');
+      error.statusCode = 500;
+      throw error;
+    }
 
     try {
       const response = await axios.patch(
