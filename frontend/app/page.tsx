@@ -20,6 +20,7 @@ import {
 import { PublicSearchResult } from '@/lib/types';
 import { searchPublicMedicines } from '@/lib/api';
 import { formatINR, cn } from '@/lib/utils';
+import { resolveLocation } from '@/lib/geo-resolver';
 
 const DEFAULT_COORDS = { lat: 12.9784, lng: 77.6408, label: 'Bangalore Central' };
 
@@ -123,6 +124,27 @@ export default function PublicDiscoveryPage() {
     return () => clearTimeout(timer);
   }, [query, coords, radiusKm, cityInput]);
 
+  // Auto-resolve Google Plus Codes or PIN codes in the location bar
+  useEffect(() => {
+    const trimmed = cityInput.trim();
+    if (!trimmed) return;
+
+    const isPlusCode = /[23456789CFGHJMPQRVWX]{2,8}\+[23456789CFGHJMPQRVWX]{2,3}/i.test(trimmed);
+    const isPincode = /^[1-9][0-9]{5}$/.test(trimmed);
+
+    if (isPlusCode || isPincode) {
+      const timer = setTimeout(async () => {
+        const resolved = await resolveLocation(trimmed);
+        if (resolved) {
+          setCoords({ lat: resolved.lat, lng: resolved.lng });
+          setLocationLabel(`${resolved.city || 'Pinpoint Location'} (${resolved.lat}, ${resolved.lng})`);
+          setLocationMessage(resolved.method === 'plus_code' ? 'Targeted via Google Maps Plus Code' : 'Targeted via Postal PIN code');
+        }
+      }, 350);
+      return () => clearTimeout(timer);
+    }
+  }, [cityInput]);
+
   return (
     <div className="space-y-8 pb-16">
       {/* Hero Section */}
@@ -207,8 +229,8 @@ export default function PublicDiscoveryPage() {
               type="text"
               value={cityInput}
               onChange={(e) => setCityInput(e.target.value)}
-              placeholder="City/Area (e.g. Bangalore, Indiranagar)"
-              className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-teal-500"
+              placeholder="City, PIN, or Plus Code (e.g. Kollam 691531 or XQP9+36H)"
+              className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-teal-500 font-mono"
             />
           </div>
 

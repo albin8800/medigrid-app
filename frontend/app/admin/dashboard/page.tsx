@@ -30,22 +30,7 @@ import { useAuth } from '@/lib/auth-context';
 import { listAllStores, updateStoreStatusApi, createStoreApi, getAdminAnalyticsApi } from '@/lib/api';
 import { Store, AdminAnalytics } from '@/lib/types';
 import { formatINR, cn } from '@/lib/utils';
-
-const LOCALITY_PRESETS: Record<string, { city: string; lat: number; lng: number }> = {
-  'Bangalore - Indiranagar': { city: 'Bangalore', lat: 12.9784, lng: 77.6408 },
-  'Bangalore - Koramangala': { city: 'Bangalore', lat: 12.9352, lng: 77.6245 },
-  'Bangalore - Whitefield': { city: 'Bangalore', lat: 12.9698, lng: 77.7500 },
-  'Bangalore - HSR Layout': { city: 'Bangalore', lat: 12.9121, lng: 77.6446 },
-  'Bangalore - Electronic City': { city: 'Bangalore', lat: 12.8399, lng: 77.6770 },
-  'Bangalore - Jayanagar': { city: 'Bangalore', lat: 12.9308, lng: 77.5838 },
-  'Mumbai - Bandra': { city: 'Mumbai', lat: 19.0596, lng: 72.8295 },
-  'Mumbai - Andheri': { city: 'Mumbai', lat: 19.1136, lng: 72.8697 },
-  'Delhi - Connaught Place': { city: 'Delhi', lat: 28.6315, lng: 77.2167 },
-  'Hyderabad - Hitec City': { city: 'Hyderabad', lat: 17.4474, lng: 78.3762 },
-  'Chennai - T Nagar': { city: 'Chennai', lat: 13.0418, lng: 80.2341 },
-  'Kochi - Edappally': { city: 'Kochi', lat: 10.0261, lng: 76.3125 },
-  'Pune - Kothrud': { city: 'Pune', lat: 18.5074, lng: 73.8077 },
-};
+import { resolveLocation, POPULAR_LOCALITIES } from '@/lib/geo-resolver';
 
 export default function AdminDashboardPage() {
   const router = useRouter();
@@ -126,13 +111,14 @@ export default function AdminDashboardPage() {
     }
   };
 
+  const [plusCodeInput, setPlusCodeInput] = useState('');
   const [geocoding, setGeocoding] = useState(false);
   const [geoFeedback, setGeoFeedback] = useState<string | null>(null);
 
-  const handleAutoGeocode = async () => {
-    const addressToLookup = `${formData.address.trim()} ${formData.city.trim()}`.trim();
-    if (!addressToLookup) {
-      setGeoFeedback('Please enter city and street address first.');
+  const handleResolveLocation = async (customQuery?: string) => {
+    const query = (customQuery || plusCodeInput || `${formData.address} ${formData.city}`).trim();
+    if (!query) {
+      setGeoFeedback('Please enter a Google Maps Plus Code (e.g. XQP9+36H, Kollam), address, or PIN code.');
       return;
     }
 
@@ -140,50 +126,30 @@ export default function AdminDashboardPage() {
     setGeoFeedback(null);
 
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4000);
-      const res = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(addressToLookup)}&limit=1`,
-        {
-          signal: controller.signal,
-          headers: { Accept: 'application/json' },
-        }
-      );
-      clearTimeout(timeoutId);
-
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data.length > 0) {
-          const lat = parseFloat(parseFloat(data[0].lat).toFixed(4));
-          const lng = parseFloat(parseFloat(data[0].lon).toFixed(4));
-          setFormData((prev) => ({ ...prev, lat: lat.toString(), lng: lng.toString() }));
-          setGeoFeedback(`📍 Auto-located via OpenStreetMap: ${lat}, ${lng}`);
-          setGeocoding(false);
-          return;
-        }
-      }
-    } catch {
-      // Fallback
-    }
-
-    const lower = addressToLookup.toLowerCase();
-    for (const [key, preset] of Object.entries(LOCALITY_PRESETS)) {
-      if (lower.includes(preset.city.toLowerCase()) || lower.includes(key.toLowerCase())) {
+      const resolved = await resolveLocation(query);
+      if (resolved) {
         setFormData((prev) => ({
           ...prev,
-          city: prev.city || preset.city,
-          lat: preset.lat.toString(),
-          lng: preset.lng.toString(),
+          lat: resolved.lat.toString(),
+          lng: resolved.lng.toString(),
+          city: resolved.city || prev.city,
+          address: prev.address || resolved.formattedAddress || prev.address,
         }));
-        setGeoFeedback(`📍 Mapped to ${key} centroid: ${preset.lat}, ${preset.lng}`);
-        setGeocoding(false);
-        return;
-      }
-    }
 
-    setFormData((prev) => ({ ...prev, lat: '12.9716', lng: '77.5946' }));
-    setGeoFeedback('📍 Set to default regional centroid: 12.9716, 77.5946');
-    setGeocoding(false);
+        let tag = 'OpenStreetMap';
+        if (resolved.method === 'plus_code') tag = 'Google Maps Plus Code';
+        else if (resolved.method === 'direct_coords') tag = 'Direct Coordinates';
+        else if (resolved.method === 'google_maps_url') tag = 'Google Maps Link';
+
+        setGeoFeedback(`📍 Locked from ${tag}: Lat ${resolved.lat}, Lng ${resolved.lng} (${resolved.city || resolved.formattedAddress || 'Location Confirmed'})`);
+      } else {
+        setGeoFeedback('Could not resolve location. Please verify the Plus Code or address.');
+      }
+    } catch {
+      setGeoFeedback('Error resolving location.');
+    } finally {
+      setGeocoding(false);
+    }
   };
 
   const handleUseCurrentGps = () => {
@@ -244,6 +210,7 @@ export default function AdminDashboardPage() {
         lng: '77.6271',
         status: 'ACTIVE',
       });
+      setPlusCodeInput('');
       setGeoFeedback(null);
       loadAdminData();
     } catch (err: any) {
@@ -683,25 +650,61 @@ export default function AdminDashboardPage() {
               </div>
 
               {/* Geolocation & Locality Helper */}
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/90 space-y-2.5">
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/90 space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-semibold text-slate-800 flex items-center gap-1.5">
                     <Compass className="h-3.5 w-3.5 text-blue-600" />
-                    Store Geolocation Helper
+                    Google Maps & Geolocation Helper
                   </span>
                   <span className="text-[10px] text-slate-500 font-sans">
-                    No manual coords needed
+                    Supports Google Plus Codes & Addresses
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {/* Google Plus Code Search Field */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-[11px] font-semibold text-slate-700">
+                      Google Maps Plus Code or Location
+                    </label>
+                    <span className="text-[10px] text-blue-600 font-mono">
+                      e.g. XQP9+36H, Kollam, Kerala 691531
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      value={plusCodeInput}
+                      onChange={(e) => setPlusCodeInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleResolveLocation();
+                        }
+                      }}
+                      placeholder="Paste Plus Code (e.g. XQP9+36H, Kollam) or PIN code..."
+                      className="flex-1 px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-mono text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleResolveLocation()}
+                      disabled={geocoding}
+                      className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium transition disabled:opacity-60 whitespace-nowrap shadow-2xs"
+                    >
+                      {geocoding ? 'Locating...' : 'Lock GPS'}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Locality Presets & Direct Actions */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1 border-t border-slate-200/60">
                   <div>
                     <label className="block text-[11px] font-medium text-slate-600 mb-1">
-                      Quick Locality Preset
+                      Quick City / Area Preset
                     </label>
                     <select
                       onChange={(e) => {
-                        const preset = LOCALITY_PRESETS[e.target.value];
+                        const preset = POPULAR_LOCALITIES[e.target.value];
                         if (preset) {
                           setFormData((prev) => ({
                             ...prev,
@@ -714,8 +717,8 @@ export default function AdminDashboardPage() {
                       }}
                       className="w-full px-2.5 py-1.5 bg-white border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-blue-500"
                     >
-                      <option value="">-- Choose Common Area --</option>
-                      {Object.keys(LOCALITY_PRESETS).map((key) => (
+                      <option value="">-- Choose City / Neighborhood --</option>
+                      {Object.keys(POPULAR_LOCALITIES).map((key) => (
                         <option key={key} value={key}>
                           {key}
                         </option>
@@ -726,26 +729,27 @@ export default function AdminDashboardPage() {
                   <div className="flex items-end gap-1.5">
                     <button
                       type="button"
-                      onClick={handleAutoGeocode}
+                      onClick={() => handleResolveLocation()}
                       disabled={geocoding}
                       className="flex-1 inline-flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-medium transition disabled:opacity-60"
                     >
                       <Navigation className={cn('h-3.5 w-3.5', geocoding && 'animate-spin')} />
-                      <span>{geocoding ? 'Detecting...' : 'Auto-Locate Address'}</span>
+                      <span>Auto-Detect Address</span>
                     </button>
                     <button
                       type="button"
                       onClick={handleUseCurrentGps}
                       title="Use device GPS"
-                      className="px-2 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 text-xs font-medium transition"
+                      className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 text-xs font-medium transition inline-flex items-center gap-1"
                     >
                       <LocateFixed className="h-3.5 w-3.5 text-slate-600" />
+                      <span className="hidden sm:inline text-[11px]">GPS</span>
                     </button>
                   </div>
                 </div>
 
                 {geoFeedback && (
-                  <div className="text-[11px] font-mono text-emerald-800 bg-emerald-50 px-2 py-1 rounded border border-emerald-200 flex items-center gap-1.5">
+                  <div className="text-[11px] font-mono text-emerald-800 bg-emerald-50 px-2.5 py-1.5 rounded-lg border border-emerald-200 flex items-center gap-1.5">
                     <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
                     <span>{geoFeedback}</span>
                   </div>
