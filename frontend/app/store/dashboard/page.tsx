@@ -91,10 +91,10 @@ export default function StoreDashboardPage() {
                 </span>
               </div>
               <div className="flex items-center gap-4 text-xs text-slate-500 flex-wrap pt-0.5">
-                {store.address && (
+                {(store.address || store.city) && (
                   <span className="flex items-center gap-1">
                     <MapPin className="h-3.5 w-3.5 text-slate-400" />
-                    <span>{store.address}, {store.city || 'Bangalore'}</span>
+                    <span>{[store.address || '', store.city || ''].filter(Boolean).join(', ')}</span>
                   </span>
                 )}
                 {store.licenseNumber && (

@@ -21,8 +21,11 @@ import Link from 'next/link';
 import { Medicine } from '@/lib/types';
 import { listMedicines, addMedicine, adjustMedicineStock } from '@/lib/api';
 import { formatINR } from '@/lib/utils';
+import { useAuth } from '@/lib/auth-context';
 
 export default function InventoryPage() {
+  const { storeSession } = useAuth();
+  const currentStoreId = storeSession?.store?.id || 'store-001';
   const [medicines, setMedicines] = useState<Medicine[]>([]);
   const [loading, setLoading] = useState(true);
   const [source, setSource] = useState<'api' | 'fallback'>('api');
@@ -170,7 +173,7 @@ export default function InventoryPage() {
         stockQuantity: stockNum,
         reorderLevel: reorderNum,
         locationRack: formData.locationRack.trim() || 'Shelf Main',
-        storeId: 'store-001',
+        storeId: currentStoreId,
       });
 
       setMedicines((prev) => [res.data, ...prev]);
@@ -202,7 +205,7 @@ export default function InventoryPage() {
           <h1 className="text-2xl font-bold tracking-tight text-slate-900 flex items-center gap-2">
             <span>Staff Inventory Management</span>
             <span className="text-xs px-2.5 py-0.5 rounded-full font-mono bg-slate-100 text-slate-600 border border-slate-200">
-              Store: store-001
+              Store: {currentStoreId}
             </span>
           </h1>
           <p className="mt-1 text-sm text-slate-500">

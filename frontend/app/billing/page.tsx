@@ -24,6 +24,7 @@ import {
 import { Medicine, Bill, PaymentMethod } from '@/lib/types';
 import { listMedicines, createBill, adjustMedicineStock } from '@/lib/api';
 import { formatINR, formatDate } from '@/lib/utils';
+import { useAuth } from '@/lib/auth-context';
 
 interface CartItem {
   medicine: Medicine;
@@ -31,6 +32,8 @@ interface CartItem {
 }
 
 function BillingContent() {
+  const { storeSession } = useAuth();
+  const currentStore = storeSession?.store;
   const searchParams = useSearchParams();
   const quickAddId = searchParams.get('quickAdd');
 
@@ -173,7 +176,7 @@ function BillingContent() {
 
     try {
       const payload = {
-        storeId: 'store-001',
+        storeId: currentStore?.id || 'store-001',
         customerName: customerName.trim() || 'Walk-in Customer',
         customerPhone: customerPhone.trim() || '',
         paymentMethod,
@@ -611,10 +614,10 @@ function BillingContent() {
             <div className="p-6 space-y-4 font-mono text-xs invoice-printable">
               <div className="text-center space-y-1 pb-3 border-b border-dashed border-slate-300">
                 <h3 className="text-base font-extrabold uppercase tracking-wider text-slate-900">
-                  MediGrid Pharmacy Network
+                  {currentStore?.name || 'MediGrid Pharmacy Network'}
                 </h3>
                 <p className="text-[11px] text-slate-500">
-                  Central Dispensary &bull; License #KA-BLR-2024-893
+                  {[currentStore?.address, currentStore?.city].filter(Boolean).join(', ') || 'Central Dispensary'}{currentStore?.licenseNumber ? ` • License #${currentStore.licenseNumber}` : ''}
                 </p>
                 <p className="text-[11px] text-slate-500">
                   GSTIN: 29AABCU9603R1ZM

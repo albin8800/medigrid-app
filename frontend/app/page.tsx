@@ -145,6 +145,29 @@ export default function PublicDiscoveryPage() {
     }
   }, [cityInput]);
 
+  // When search query is empty, cleanly surface each nearby active store with its exact details
+  const displayItems = React.useMemo(() => {
+    if (!query.trim()) {
+      const seen = new Set<string>();
+      const storesOnly: PublicSearchResult[] = [];
+      for (const item of results) {
+        if (!seen.has(item.storeId)) {
+          seen.add(item.storeId);
+          storesOnly.push({
+            ...item,
+            medicineName: item.medicineName === 'Full Pharmacy Counter' ? 'Full Pharmacy Counter' : 'Full Pharmacy Dispensary',
+            genericName: 'All General & Prescription Medicines Available In-Store',
+            price: 0,
+            stockStatus: 'IN_STOCK',
+            inStock: true,
+          });
+        }
+      }
+      return storesOnly;
+    }
+    return results;
+  }, [results, query]);
+
   return (
     <div className="space-y-8 pb-16">
       {/* Hero Section */}
@@ -278,10 +301,10 @@ export default function PublicDiscoveryPage() {
       <div className="max-w-4xl mx-auto flex items-center justify-between">
         <div className="flex items-center gap-2">
           <h2 className="text-lg font-bold text-slate-900">
-            {query.trim() ? `Pharmacies with "${query.trim()}"` : 'Nearby Medical Stores'}
+            {query.trim() ? `Pharmacies with "${query.trim()}"` : 'Nearby Medical Stores & Pharmacies'}
           </h2>
           <span className="px-2 py-0.5 rounded-full text-xs font-mono font-medium bg-slate-200 text-slate-700">
-            {results.length} {results.length === 1 ? 'store' : 'stores'} found
+            {displayItems.length} {displayItems.length === 1 ? 'store' : 'stores'} found
           </span>
         </div>
         <span className="text-xs text-slate-400">Sorted by proximity (closest first)</span>
@@ -302,7 +325,7 @@ export default function PublicDiscoveryPage() {
               </div>
             ))}
           </div>
-        ) : results.length === 0 ? (
+        ) : displayItems.length === 0 ? (
           <div className="bg-white rounded-2xl border border-dashed border-slate-300 p-12 text-center space-y-3">
             <div className="h-12 w-12 rounded-full bg-slate-100 flex items-center justify-center mx-auto text-slate-400">
               <StoreIcon className="h-6 w-6" />
@@ -315,7 +338,7 @@ export default function PublicDiscoveryPage() {
             </p>
           </div>
         ) : (
-          results.map((item, idx) => {
+          displayItems.map((item, idx) => {
             const isLowStock = item.stockStatus === 'LOW_STOCK';
             const isOutOfStock = item.stockStatus === 'OUT_OF_STOCK';
 
@@ -330,7 +353,7 @@ export default function PublicDiscoveryPage() {
                     <span className="font-bold text-slate-900 text-base">
                       {item.storeName}
                     </span>
-                    {item.distanceKm !== undefined && (
+                    {typeof item.distanceKm === 'number' && item.distanceKm !== null && (
                       <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-mono font-medium bg-teal-50 text-teal-700 border border-teal-200">
                         <MapPin className="h-3 w-3" />
                         <span>{item.distanceKm} km away</span>
@@ -368,7 +391,7 @@ export default function PublicDiscoveryPage() {
 
                   <div className="flex items-center gap-1.5 text-xs text-slate-500">
                     <MapPin className="h-3.5 w-3.5 text-slate-400 shrink-0" />
-                    <span className="truncate">{item.storeAddress}</span>
+                    <span className="truncate">{item.storeAddress || 'Address on file'}</span>
                   </div>
                 </div>
 
@@ -391,7 +414,7 @@ export default function PublicDiscoveryPage() {
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-medium transition"
                       >
                         <Phone className="h-3.5 w-3.5 text-teal-600" />
-                        <span>📞 Call Store</span>
+                        <span>📞 Call Store ({item.storePhone})</span>
                       </a>
                     )}
                   </div>

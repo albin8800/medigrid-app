@@ -51,13 +51,13 @@ export default function AdminDashboardPage() {
   const [formData, setFormData] = useState({
     name: '',
     licenseNumber: '',
-    city: 'Bangalore',
+    city: '',
     address: '',
     phone: '',
     email: '',
     password: '',
-    lat: '12.9279',
-    lng: '77.6271',
+    lat: '',
+    lng: '',
     status: 'ACTIVE' as 'ACTIVE' | 'SUSPENDED',
   });
 
@@ -201,13 +201,13 @@ export default function AdminDashboardPage() {
       setFormData({
         name: '',
         licenseNumber: '',
-        city: 'Bangalore',
+        city: '',
         address: '',
         phone: '',
         email: '',
         password: '',
-        lat: '12.9279',
-        lng: '77.6271',
+        lat: '',
+        lng: '',
         status: 'ACTIVE',
       });
       setPlusCodeInput('');

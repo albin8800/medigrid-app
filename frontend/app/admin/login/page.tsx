@@ -104,6 +104,42 @@ export default function AdminLoginPage() {
             <ArrowRight className="h-4 w-4" />
           </button>
         </form>
+
+        {/* Demo Quick-Fill Button */}
+        <div className="border-t border-slate-100 pt-5 space-y-2">
+          <div className="text-xs font-medium text-slate-400">
+            Developer / Evaluation Quick-Fill:
+          </div>
+
+          <button
+            type="button"
+            onClick={async () => {
+              setEmail('admin@medigrid.com');
+              setPassword('admin123');
+              setErrorMessage(null);
+              setLoading(true);
+              try {
+                await loginAdmin('admin@medigrid.com', 'admin123');
+                router.push('/admin/dashboard');
+              } catch (err: any) {
+                setErrorMessage(err.message || 'Login failed.');
+              } finally {
+                setLoading(false);
+              }
+            }}
+            className="w-full text-left px-3.5 py-2.5 rounded-xl border border-blue-200 bg-blue-50/60 hover:bg-blue-100/70 text-xs text-blue-900 transition flex items-center justify-between group"
+          >
+            <div className="flex items-center gap-2">
+              <span className="font-semibold text-slate-900">
+                [ Login as Super Admin ]
+              </span>
+              <span className="font-mono text-slate-500 text-[11px]">(admin@medigrid.com)</span>
+            </div>
+            <span className="text-xs font-mono font-medium text-blue-600 group-hover:underline">
+              Enter &rarr;
+            </span>
+          </button>
+        </div>
       </div>
     </div>
   );

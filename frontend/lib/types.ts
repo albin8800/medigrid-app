@@ -105,11 +105,12 @@ export interface StoreSession {
     id: string;
     name: string;
     email: string;
-    status: 'ACTIVE' | 'SUSPENDED';
     licenseNumber?: string;
+    address?: string;
     city?: string;
     phone?: string;
-    address?: string;
+    coordinates?: { lat: number; lng: number };
+    status: 'ACTIVE' | 'SUSPENDED';
   };
 }
 

@@ -193,7 +193,7 @@ export default function StorePOSPage() {
       // 2. Ensure both API backend and local fallback storage reflect stock deduction
       for (const item of currentCart) {
         try {
-          await adjustMedicineStock(item.medicineId, 'DEDUCT', item.quantity);
+          await adjustMedicineStock(item.medicineId, 'DEDUCT', item.quantity, storeSession.store.id);
         } catch {
           // Handled if order-service already deducted
         }
@@ -249,11 +249,21 @@ export default function StorePOSPage() {
           </h1>
         </div>
 
-        <div className="flex items-center gap-2 text-xs text-slate-500">
+        <div className="flex items-center gap-2 text-xs text-slate-500 flex-wrap">
           <span className="inline-block h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
           <span>Register Active:</span>
           <strong className="text-slate-800">{store.name}</strong>
           <span className="font-mono">({store.id})</span>
+          {store.licenseNumber && (
+            <span className="font-mono text-[11px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
+              Lic: {store.licenseNumber}
+            </span>
+          )}
+          {store.city && (
+            <span className="text-slate-600 font-medium">
+              &bull; {store.city}
+            </span>
+          )}
         </div>
       </div>
 
@@ -593,9 +603,17 @@ export default function StorePOSPage() {
 
             <div className="text-center space-y-1 text-xs">
               <div className="font-bold text-sm text-slate-900">{store.name}</div>
-              <div className="text-[11px] text-slate-500">{store.address}, {store.city || 'Bangalore'}</div>
-              <div className="text-[11px] text-slate-500">Phone: {store.phone}</div>
-              <div className="text-[11px] text-slate-400">License: {store.licenseNumber || 'KA-BLR-2023-001'}</div>
+              {(store.address || store.city) && (
+                <div className="text-[11px] text-slate-500">
+                  {[store.address || '', store.city || ''].filter(Boolean).join(', ')}
+                </div>
+              )}
+              {store.phone && (
+                <div className="text-[11px] text-slate-500">Phone: {store.phone}</div>
+              )}
+              <div className="text-[11px] text-slate-400">
+                License: {store.licenseNumber || 'Not Specified'}
+              </div>
             </div>
 
             <div className="border-t border-dashed border-slate-300 pt-2 text-[11px] text-slate-600 space-y-1">

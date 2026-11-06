@@ -213,8 +213,8 @@ export async function searchPublicMedicines(
       });
     }
 
-    // If default search (no medicine query provided), also list the store itself so user sees nearby pharmacies
-    if (!searchMedicine && storeMedicineMatches === 0) {
+    // If default search (no medicine query provided), surface the store itself with its exact location details
+    if (!searchMedicine) {
       results.push({
         storeId: store.id,
         storeName: store.name,
@@ -222,11 +222,12 @@ export async function searchPublicMedicines(
         distanceKm,
         storePhone: store.phone,
         medicineName: 'Full Pharmacy Counter',
-        genericName: 'All General & Prescription Medicines Available In-Store',
+        genericName: `${storeMedicineMatches} Verified Medicines In-Store • Licensed Dispensary`,
         price: 0,
         stockStatus: 'IN_STOCK',
         inStock: true,
       });
+      continue;
     }
   }
 
@@ -259,9 +260,51 @@ export async function storeLoginApi(email: string, password: string): Promise<St
       throw new Error(json.error || 'Store login failed');
     }
 
+    // Backend /api/v1/auth/store/login returns basic { id, name, email, status }.
+    // Enrich with full store metadata (licenseNumber, address, city, phone, coordinates)
+    let fullStore = { ...json.store };
+    try {
+      const storesListRes = await fetch(`${CATALOG_API_BASE}/api/v1/admin/stores`, {
+        headers: { Accept: 'application/json' },
+      });
+      if (storesListRes.ok) {
+        const storesData = await storesListRes.json();
+        const found = (storesData.data || []).find(
+          (s: any) => s.id === json.store.id || s.email?.toLowerCase() === json.store.email?.toLowerCase()
+        );
+        if (found) {
+          fullStore = {
+            ...fullStore,
+            licenseNumber: found.licenseNumber,
+            address: found.address,
+            city: found.city,
+            phone: found.phone,
+            coordinates: found.coordinates,
+          };
+        }
+      }
+    } catch {
+      // offline or admin endpoint unavailable, fall back to local store registry
+    }
+
+    // Fall back to local store registry if any fields remain missing
+    const localStore = getStoredStores().find(
+      (s) => s.id === json.store.id || s.email?.toLowerCase() === json.store.email?.toLowerCase()
+    );
+    if (localStore) {
+      fullStore = {
+        licenseNumber: localStore.licenseNumber,
+        address: localStore.address,
+        city: localStore.city,
+        phone: localStore.phone,
+        coordinates: localStore.coordinates,
+        ...fullStore,
+      };
+    }
+
     return {
       token: json.token,
-      store: json.store,
+      store: fullStore,
     };
   } catch (err: any) {
     // If backend is offline or network error, verify against local fallback
@@ -270,7 +313,47 @@ export async function storeLoginApi(email: string, password: string): Promise<St
     }
 
     const stores = getStoredStores();
-    const store = stores.find((s) => s.email.toLowerCase() === email.trim().toLowerCase());
+    let store = stores.find((s) => s.email.toLowerCase() === email.trim().toLowerCase());
+    if (!store) {
+      // Known platform test stores fallback
+      const defaultKnownStores: Store[] = [
+        {
+          id: 'store-001',
+          name: 'Apollo Pharmacy - Indiranagar',
+          licenseNumber: 'KA-BLR-2023-001',
+          address: '100 Ft Rd, Indiranagar',
+          city: 'Bangalore',
+          phone: '+91-9876543210',
+          email: 'apollo.indiranagar@medigrid.com',
+          coordinates: { lat: 12.9784, lng: 77.6408 },
+          status: 'ACTIVE',
+        },
+        {
+          id: 'store-002',
+          name: 'MedPlus Chemist - Koramangala',
+          licenseNumber: 'KA-BLR-2023-002',
+          address: '80 Ft Rd, 4th Block, Koramangala',
+          city: 'Bangalore',
+          phone: '+91-9876543211',
+          email: 'medplus.koramangala@medigrid.com',
+          coordinates: { lat: 12.9352, lng: 77.6245 },
+          status: 'ACTIVE',
+        },
+        {
+          id: 'store-003',
+          name: 'Lifecare Pharmacy - HSR Layout',
+          licenseNumber: 'KA-BLR-2023-003',
+          address: '17th Main Rd, Sector 4, HSR Layout',
+          city: 'Bangalore',
+          phone: '+91-9876543212',
+          email: 'lifecare.hsr@medigrid.com',
+          coordinates: { lat: 12.9121, lng: 77.6446 },
+          status: 'SUSPENDED',
+        },
+      ];
+      store = defaultKnownStores.find((s) => s.email.toLowerCase() === email.trim().toLowerCase());
+    }
+
     if (!store) {
       throw new Error('Invalid email or password');
     }
@@ -290,6 +373,7 @@ export async function storeLoginApi(email: string, password: string): Promise<St
         city: store.city,
         phone: store.phone,
         address: store.address,
+        coordinates: store.coordinates,
       },
     };
   }
@@ -475,7 +559,7 @@ export async function createBill(payload: CreateBillPayload): Promise<{ data: Bi
 
   const bill: Bill = {
     billId: `BILL-${Date.now()}`,
-    storeId: payload.storeId || 'store-001',
+    storeId: payload.storeId || '',
     customerName: payload.customerName || 'Walk-in Customer',
     customerPhone: payload.customerPhone || '',
     paymentMethod: payload.paymentMethod,
@@ -769,16 +853,22 @@ export const addMedicine = addStoreMedicine;
 export async function adjustMedicineStock(
   id: string,
   action: 'DEDUCT' | 'RESTOCK',
-  quantity: number
+  quantity: number,
+  storeId?: string
 ): Promise<{ data: Medicine; source: 'api' | 'fallback' }> {
   try {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 3000);
 
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (storeId) {
+      headers['x-store-id'] = storeId;
+    }
+
     const res = await fetch(`${CATALOG_API_BASE}/api/v1/medicines/${id}/stock`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action, quantity }),
+      headers,
+      body: JSON.stringify({ action, quantity, ...(storeId ? { storeId } : {}) }),
       signal: controller.signal,
     });
     clearTimeout(timeoutId);
@@ -794,6 +884,10 @@ export async function adjustMedicineStock(
   const stored = getStoredMedicines();
   const med = stored.find((m) => m.id === id);
   if (!med) throw new Error(`Medicine with id '${id}' not found`);
+
+  if (storeId && med.storeId && med.storeId !== storeId) {
+    throw new Error(`Medicine '${med.name}' does not belong to store '${storeId}'`);
+  }
 
   if (action === 'DEDUCT') {
     if (med.stockQuantity < quantity) {
