@@ -549,8 +549,8 @@ class PharmacyService {
       throw err;
     }
 
-    const adminEmail = process.env.ADMIN_EMAIL || (process.env.NODE_ENV === 'test' ? 'admin@medigrid.com' : undefined);
-    const adminPassword = process.env.ADMIN_PASSWORD || (process.env.NODE_ENV === 'test' ? 'admin123' : undefined);
+    const adminEmail = process.env.ADMIN_EMAIL;
+    const adminPassword = process.env.ADMIN_PASSWORD;
 
     if (!adminEmail || !adminPassword) {
       const err = new Error('Super Admin credentials not configured in environment (ADMIN_EMAIL, ADMIN_PASSWORD)');

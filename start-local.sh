@@ -19,14 +19,14 @@ echo "=========================================================="
 echo "📦 Step 1: Launching PostgreSQL & Redis containers..."
 docker compose up -d
 
-# 2. Start pharmacy-service (Port 5001)
+# 2. Start pharmacy-service
 echo "⚡ Step 2: Starting Catalog & Inventory Service (:5001)..."
-(cd services/pharmacy-service && PORT=5001 npm start) &
+(cd services/pharmacy-service && PORT="${PHARMACY_SERVICE_PORT:-5001}" npm start) &
 PID_PHARMACY=$!
 
-# 3. Start order-service (Port 5002)
+# 3. Start order-service
 echo "⚡ Step 3: Starting In-Store POS & Billing Service (:5002)..."
-(cd services/order-service && PORT=5002 npm start) &
+(cd services/order-service && PORT="${ORDER_SERVICE_PORT:-5002}" npm start) &
 PID_ORDER=$!
 
 # 4. Start Next.js frontend (Port 3000)

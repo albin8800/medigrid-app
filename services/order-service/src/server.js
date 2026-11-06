@@ -1,7 +1,10 @@
 const app = require('./app');
 const { closeDb } = require('./config/db');
 
-const PORT = process.env.PORT || 5002;
+const PORT = process.env.PORT || process.env.ORDER_SERVICE_PORT;
+if (!PORT) {
+  throw new Error('PORT environment variable is required (please configure PORT in .env)');
+}
 
 const server = app.listen(PORT, () => {
   console.log(`Order service listening on port ${PORT}`);

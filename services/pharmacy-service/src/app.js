@@ -1,8 +1,12 @@
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 const dotenv = require('dotenv');
 
-dotenv.config({ quiet: true });
+// Load environment configuration (.env)
+dotenv.config({ path: path.resolve(process.cwd(), '.env'), quiet: true });
+dotenv.config({ path: path.resolve(__dirname, '../.env'), quiet: true });
+dotenv.config({ path: path.resolve(__dirname, '../../../.env'), quiet: true });
 
 const pharmacyRoutes = require('./routes/pharmacy.routes');
 
