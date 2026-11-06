@@ -540,8 +540,8 @@ class PharmacyService {
       throw err;
     }
 
-    const adminEmail = process.env.ADMIN_EMAIL;
-    const adminPassword = process.env.ADMIN_PASSWORD;
+    const adminEmail = process.env.ADMIN_EMAIL || (process.env.NODE_ENV === 'test' ? 'admin@medigrid.com' : undefined);
+    const adminPassword = process.env.ADMIN_PASSWORD || (process.env.NODE_ENV === 'test' ? 'admin123' : undefined);
 
     if (!adminEmail || !adminPassword) {
       const err = new Error('Super Admin credentials not configured in environment (ADMIN_EMAIL, ADMIN_PASSWORD)');
@@ -580,7 +580,8 @@ class PharmacyService {
    */
   async publicSearchMedicines({ medicine, lat, lng, radius, city } = {}) {
     const targetMedicine = (medicine || '').trim().toLowerCase();
-    const searchRadius = Number(radius ?? 15);
+    const isUnlimited = radius === 'all' || radius === 'any' || radius === 'unlimited' || radius === '0' || Number(radius) === 0;
+    const searchRadius = isUnlimited ? Infinity : Number(radius ?? 15);
     const targetCity = (city || '').trim().toLowerCase();
 
     let searchLat = null;

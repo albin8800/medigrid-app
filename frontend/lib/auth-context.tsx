@@ -46,6 +46,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setStoreSession(session);
     try {
       localStorage.setItem(STORE_SESSION_KEY, JSON.stringify(session));
+      if (typeof document !== 'undefined') {
+        document.cookie = `${STORE_SESSION_KEY}=${session.token}; path=/; SameSite=Strict; max-age=86400`;
+      }
     } catch {
       // ignore
     }
@@ -56,6 +59,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setStoreSession(null);
     try {
       localStorage.removeItem(STORE_SESSION_KEY);
+      if (typeof document !== 'undefined') {
+        document.cookie = `${STORE_SESSION_KEY}=; path=/; max-age=0; SameSite=Strict`;
+      }
     } catch {
       // ignore
     }
@@ -66,6 +72,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAdminSession(session);
     try {
       localStorage.setItem(ADMIN_SESSION_KEY, JSON.stringify(session));
+      if (typeof document !== 'undefined') {
+        document.cookie = `${ADMIN_SESSION_KEY}=${session.token}; path=/; SameSite=Strict; max-age=86400`;
+      }
     } catch {
       // ignore
     }
@@ -76,6 +85,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAdminSession(null);
     try {
       localStorage.removeItem(ADMIN_SESSION_KEY);
+      if (typeof document !== 'undefined') {
+        document.cookie = `${ADMIN_SESSION_KEY}=; path=/; max-age=0; SameSite=Strict`;
+      }
     } catch {
       // ignore
     }

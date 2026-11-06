@@ -149,7 +149,7 @@ export async function searchPublicMedicines(
         store.coordinates.lat,
         store.coordinates.lng
       );
-      if (distanceKm > searchRadius) {
+      if (searchRadius > 0 && distanceKm > searchRadius) {
         continue;
       }
     }

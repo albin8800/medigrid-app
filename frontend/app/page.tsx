@@ -221,9 +221,10 @@ export default function PublicDiscoveryPage() {
               className="px-2.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-800 focus:outline-none focus:ring-1 focus:ring-teal-500 font-mono"
             >
               <option value={5}>Within 5 km</option>
-              <option value={10}>Within 10 km</option>
               <option value={15}>Within 15 km</option>
-              <option value={25}>Within 25 km</option>
+              <option value={30}>Within 30 km</option>
+              <option value={50}>Within 50 km</option>
+              <option value={0}>Any Distance (All)</option>
             </select>
           </div>
         </div>
