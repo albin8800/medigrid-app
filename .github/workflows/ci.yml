@@ -1,0 +1,105 @@
+name: MediGrid DevSecOps CI Pipeline
+
+on:
+  push:
+    branches: [ develop, main ]
+  pull_request:
+    branches: [ develop, main ]
+
+jobs:
+  # ============================================================================
+  # JOB 1: Test & Lint Verification (Fail-Fast Gate)                                                                                                                                                                                  
+  # ============================================================================
+  test-and-verify:
+    name: Microservices Automated Test Suite
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js Runtime
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+          cache-dependency-path: |
+            services/pharmacy-service/package-lock.json
+            services/order-service/package-lock.json
+            frontend/package-lock.json
+
+      - name: Test Pharmacy Service (98 Tests)
+        run: |
+          cd services/pharmacy-service
+          npm ci
+          npm test
+
+      - name: Test Order Service (84 Tests)
+        run: |
+          cd services/order-service
+          npm ci
+          npm test
+
+      - name: Verify Frontend Next.js Build
+        run: |
+          cd frontend
+          npm ci
+          npm run build
+
+  # ============================================================================
+  # JOB 2: Containerization & Trivy Security Gate
+  # ============================================================================
+  security-and-docker:
+    name: Docker Build & Trivy Vulnerability Gate
+    needs: test-and-verify
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4                                                                                                                                                                                                     
+                                                                                                                                                                                                                                      
+      - name: Set up Docker Buildx                                                                                                                                                                                                    
+        uses: docker/setup-buildx-action@v3                                                                                                                                                                                           
+                                                                                                                                                                                                                                      
+      # 1. Build and Scan Pharmacy Service                                                                                                                                                                                            
+      - name: Build Pharmacy Service Image                                                                                                                                                                                            
+        run: |
+          docker build -t medigrid-pharmacy-service:ci services/pharmacy-service
+
+      - name: Scan Pharmacy Service with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'medigrid-pharmacy-service:ci'
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: 'CRITICAL'
+                                                                                                                                                                                                                                      
+      # 2. Build and Scan Order Service                                                                                                                                                                                               
+      - name: Build Order Service Image
+        run: |
+          docker build -t medigrid-order-service:ci services/order-service
+
+      - name: Scan Order Service with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'medigrid-order-service:ci'
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: 'CRITICAL'
+
+      # 3. Build and Scan Next.js Frontend
+      - name: Build Frontend Image
+        run: |
+          docker build -t medigrid-frontend:ci frontend
+
+      - name: Scan Frontend with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: 'medigrid-frontend:ci'
+          format: 'table'
+          exit-code: '1'
+          ignore-unfixed: true
+          severity: 'CRITICAL'
+          trivyignores: 'frontend/.trivyignore'
