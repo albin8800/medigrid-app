@@ -6,15 +6,15 @@ services:
     container_name: medigrid-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: medigrid
-      POSTGRES_PASSWORD: medigrid_password
-      POSTGRES_DB: medigrid_db
+      POSTGRES_USER: ${POSTGRES_USER:-medigrid}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-medigrid_password}
+      POSTGRES_DB: ${POSTGRES_DB:-medigrid_db}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U medigrid -d medigrid_db"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-medigrid} -d $${POSTGRES_DB:-medigrid_db}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -24,7 +24,7 @@ services:
     container_name: medigrid-redis
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -36,11 +36,11 @@ services:
     container_name: medigrid-pgadmin
     restart: unless-stopped
     environment:
-      PGADMIN_DEFAULT_EMAIL: ${ADMIN_EMAIL:-admin@medigrid.com}
-      PGADMIN_DEFAULT_PASSWORD: ${ADMIN_PASSWORD:-admin123}
+      PGADMIN_DEFAULT_EMAIL: ${ADMIN_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${ADMIN_PASSWORD}
       PGADMIN_CONFIG_SERVER_MODE: 'False'
     ports:
-      - "5050:80"
+      - "127.0.0.1:5050:80"
     depends_on:
       postgres:
         condition: service_healthy
@@ -52,7 +52,7 @@ services:
     environment:
       - REDIS_HOSTS=local:redis:6379
     ports:
-      - "8081:8081"
+      - "127.0.0.1:8081:8081"
     depends_on:
       redis:
         condition: service_healthy
