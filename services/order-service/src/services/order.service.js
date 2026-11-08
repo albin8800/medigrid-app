@@ -83,6 +83,27 @@ class OrderService {
       }
     }
 
+    // Direct database check fallback when running with real PostgreSQL in cloud
+    if (!db.isMockMode() && process.env.DATABASE_URL) {
+      try {
+        const pool = db.getPool() || db.initDb();
+        if (pool) {
+          const res = await pool.query('SELECT * FROM stores WHERE id = $1 LIMIT 1', [storeId]);
+          if (res.rows && res.rows.length > 0) {
+            const store = res.rows[0];
+            if (store.status !== 'ACTIVE') {
+              const err = new Error(`Store '${storeId}' is suspended or inactive`);
+              err.statusCode = 403;
+              throw err;
+            }
+            return store;
+          }
+        }
+      } catch (err) {
+        if (err.statusCode) throw err;
+      }
+    }
+
     const store = this.knownStores.get(storeId);
     if (!store) {
       const err = new Error(`Store with id '${storeId}' not found`);

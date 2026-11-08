@@ -23,6 +23,7 @@ router.get('/api/v1/public/search', pharmacyController.publicSearch);
 
 // Super Admin Store Management APIs
 router.get('/api/v1/admin/stores', pharmacyController.listStores);
+router.get('/api/v1/admin/stores/:id', pharmacyController.getStore);
 router.post('/api/v1/admin/stores', pharmacyController.createStore);
 router.patch('/api/v1/admin/stores/:id/status', pharmacyController.updateStoreStatus);
 router.delete('/api/v1/admin/stores/:id', pharmacyController.deleteStore);
