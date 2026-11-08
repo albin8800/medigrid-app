@@ -22,7 +22,7 @@ import {
   FileCheck,
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
-import { listStoreMedicines, createBill, adjustMedicineStock, matchesMedicineSearch } from '@/lib/api';
+import { listStoreMedicines, createBill, matchesMedicineSearch } from '@/lib/api';
 import { Medicine, Bill, PaymentMethod } from '@/lib/types';
 import { formatINR, cn } from '@/lib/utils';
 
@@ -63,18 +63,22 @@ export default function StorePOSPage() {
     }
 
     loadCatalog();
+    const timer = setInterval(() => {
+      loadCatalog(true);
+    }, 4000);
+    return () => clearInterval(timer);
   }, [storeSession, isInitialized]);
 
-  const loadCatalog = async () => {
+  const loadCatalog = async (isBackground = false) => {
     if (!storeSession?.store?.id) return;
-    setLoading(true);
+    if (!isBackground) setLoading(true);
     try {
       const res = await listStoreMedicines(storeSession.store.id);
       setMedicines(res.data);
     } catch (err) {
       console.error('Failed to load store medicines for POS:', err);
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
   };
 
@@ -190,17 +194,8 @@ export default function StorePOSPage() {
         })
       );
 
-      // 2. Ensure both API backend and local fallback storage reflect stock deduction
-      for (const item of currentCart) {
-        try {
-          await adjustMedicineStock(item.medicineId, 'DEDUCT', item.quantity, storeSession.store.id);
-        } catch {
-          // Handled if order-service already deducted
-        }
-      }
-
       setCompletedBill(res.data);
-      loadCatalog();
+      loadCatalog(true);
       clearRegister();
     } catch (err: any) {
       setPosError(err.message || 'Billing transaction failed.');

@@ -481,6 +481,28 @@ async function updateStoreStatus(req, res, next) {
 }
 
 /**
+ * Get store by ID: GET /api/v1/admin/stores/:id
+ */
+async function getStore(req, res, next) {
+  try {
+    const { id } = req.params;
+    const store = await pharmacyService.getStoreById(id);
+    if (!store) {
+      return res.status(404).json({
+        success: false,
+        error: `Store with id '${id}' not found`
+      });
+    }
+    return res.status(200).json({
+      success: true,
+      data: store
+    });
+  } catch (error) {
+    return next(error);
+  }
+}
+
+/**
  * Delete a store: DELETE /api/v1/admin/stores/:id
  */
 async function deleteStore(req, res, next) {
@@ -520,6 +542,7 @@ module.exports = {
   adminLogin,
   publicSearch,
   listStores,
+  getStore,
   createStore,
   updateStoreStatus,
   deleteStore

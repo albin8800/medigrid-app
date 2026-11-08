@@ -69,10 +69,14 @@ export default function AdminDashboardPage() {
     }
 
     loadAdminData();
+    const timer = setInterval(() => {
+      loadAdminData(true);
+    }, 4000);
+    return () => clearInterval(timer);
   }, [adminSession, isInitialized]);
 
-  const loadAdminData = async () => {
-    setLoading(true);
+  const loadAdminData = async (isBackground = false) => {
+    if (!isBackground) setLoading(true);
     try {
       const [storesRes, analyticsRes] = await Promise.all([
         listAllStores(),
@@ -83,7 +87,7 @@ export default function AdminDashboardPage() {
     } catch (err) {
       console.error('Failed to load admin data:', err);
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
   };
 
@@ -269,7 +273,7 @@ export default function AdminDashboardPage() {
         <div className="flex items-center gap-2">
           <button
             type="button"
-            onClick={loadAdminData}
+            onClick={() => loadAdminData()}
             title="Refresh Platform Metrics"
             className="p-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 transition shadow-2xs"
           >
