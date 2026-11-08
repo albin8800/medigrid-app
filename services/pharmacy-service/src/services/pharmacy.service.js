@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const { initRedis, isRedisConnected } = require('../config/redis');
+const db = require('../config/db');
 
 class PharmacyService {
   constructor() {
@@ -373,6 +374,30 @@ class PharmacyService {
     };
   }
 
+  /**
+   * Map PostgreSQL database row to normalized Store object
+   */
+  _mapDbRowToStore(row) {
+    if (!row) return null;
+    return {
+      id: row.id,
+      name: row.name,
+      licenseNumber: row.license_number || '',
+      email: row.email,
+      password: row.password_hash,
+      phone: row.phone || '',
+      address: row.address || '',
+      city: row.city || '',
+      coordinates: {
+        lat: row.latitude !== null && row.latitude !== undefined ? parseFloat(row.latitude) : 0,
+        lng: row.longitude !== null && row.longitude !== undefined ? parseFloat(row.longitude) : 0
+      },
+      status: (row.status || 'ACTIVE').toUpperCase(),
+      createdAt: row.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString(),
+      updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : new Date().toISOString()
+    };
+  }
+
   // ==========================================
   // STORE / TENANT MODEL & AUTH METHODS
   // ==========================================
@@ -420,6 +445,59 @@ class PharmacyService {
       updatedAt: now
     };
 
+    if (!db.isMockMode()) {
+      try {
+        const pool = db.getPool() || db.initDb();
+        if (pool) {
+          const insertSql = `
+            INSERT INTO stores (id, name, license_number, email, password_hash, phone, address, city, latitude, longitude, status, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+            ON CONFLICT (id) DO UPDATE SET
+              name = EXCLUDED.name,
+              license_number = EXCLUDED.license_number,
+              email = EXCLUDED.email,
+              password_hash = EXCLUDED.password_hash,
+              phone = EXCLUDED.phone,
+              address = EXCLUDED.address,
+              city = EXCLUDED.city,
+              latitude = EXCLUDED.latitude,
+              longitude = EXCLUDED.longitude,
+              status = EXCLUDED.status,
+              updated_at = EXCLUDED.updated_at
+            RETURNING *;
+          `;
+          const result = await pool.query(insertSql, [
+            store.id,
+            store.name,
+            store.licenseNumber,
+            store.email,
+            store.password,
+            store.phone,
+            store.address,
+            store.city,
+            store.coordinates.lat,
+            store.coordinates.lng,
+            store.status,
+            store.createdAt,
+            store.updatedAt
+          ]);
+
+          if (result.rows && result.rows.length > 0) {
+            const savedStore = this._mapDbRowToStore(result.rows[0]);
+            this.stores.set(savedStore.id, savedStore);
+            return this._sanitizeStore(savedStore);
+          }
+        }
+      } catch (err) {
+        if (err.code === '23505') {
+          const conflictErr = new Error(`Store with email '${email}' or license number already exists`);
+          conflictErr.statusCode = 409;
+          throw conflictErr;
+        }
+        console.warn('Postgres persist failed in registerStore, falling back to in-memory:', err.message);
+      }
+    }
+
     this.stores.set(id, store);
     return this._sanitizeStore(store);
   }
@@ -429,6 +507,22 @@ class PharmacyService {
    */
   async getStoreById(id) {
     if (!id) return null;
+
+    if (!db.isMockMode()) {
+      try {
+        const pool = db.getPool() || db.initDb();
+        if (pool) {
+          const res = await pool.query('SELECT * FROM stores WHERE id = $1 LIMIT 1', [id]);
+          if (res.rows && res.rows.length > 0) {
+            return this._sanitizeStore(this._mapDbRowToStore(res.rows[0]));
+          }
+          return null;
+        }
+      } catch (err) {
+        console.warn('Postgres getStoreById failed, falling back:', err.message);
+      }
+    }
+
     const store = this.stores.get(id);
     return store ? this._sanitizeStore(store) : null;
   }
@@ -439,6 +533,22 @@ class PharmacyService {
   async getStoreByEmail(email) {
     if (!email) return null;
     const normalized = email.trim().toLowerCase();
+
+    if (!db.isMockMode()) {
+      try {
+        const pool = db.getPool() || db.initDb();
+        if (pool) {
+          const res = await pool.query('SELECT * FROM stores WHERE LOWER(email) = LOWER($1) LIMIT 1', [normalized]);
+          if (res.rows && res.rows.length > 0) {
+            return this._mapDbRowToStore(res.rows[0]);
+          }
+          return null;
+        }
+      } catch (err) {
+        console.warn('Postgres getStoreByEmail failed, falling back:', err.message);
+      }
+    }
+
     for (const store of this.stores.values()) {
       if (store.email && store.email.toLowerCase() === normalized) {
         return store;
@@ -451,6 +561,38 @@ class PharmacyService {
    * List all stores with optional filtering by status and search
    */
   async listStores({ status, search } = {}) {
+    if (!db.isMockMode()) {
+      try {
+        const pool = db.getPool() || db.initDb();
+        if (pool) {
+          let sql = 'SELECT * FROM stores WHERE 1=1';
+          const params = [];
+          let paramIdx = 1;
+
+          if (status) {
+            sql += ` AND UPPER(status) = UPPER($${paramIdx++})`;
+            params.push(status.trim());
+          }
+
+          if (search) {
+            const q = `%${search.trim().toLowerCase()}%`;
+            sql += ` AND (LOWER(name) LIKE $${paramIdx} OR LOWER(license_number) LIKE $${paramIdx} OR LOWER(city) LIKE $${paramIdx})`;
+            params.push(q);
+            paramIdx++;
+          }
+
+          sql += ' ORDER BY created_at DESC';
+
+          const res = await pool.query(sql, params);
+          if (res.rows) {
+            return res.rows.map((row) => this._sanitizeStore(this._mapDbRowToStore(row)));
+          }
+        }
+      } catch (err) {
+        console.warn('Postgres listStores failed, falling back:', err.message);
+      }
+    }
+
     let results = Array.from(this.stores.values());
 
     if (status) {
@@ -475,17 +617,41 @@ class PharmacyService {
    * Update store status (ACTIVE or SUSPENDED)
    */
   async updateStoreStatus(id, status) {
-    const store = this.stores.get(id);
-    if (!store) {
-      const err = new Error(`Store with id '${id}' not found`);
-      err.statusCode = 404;
-      throw err;
-    }
-
     const newStatus = (status || '').trim().toUpperCase();
     if (newStatus !== 'ACTIVE' && newStatus !== 'SUSPENDED') {
       const err = new Error("Invalid status. Must be 'ACTIVE' or 'SUSPENDED'");
       err.statusCode = 400;
+      throw err;
+    }
+
+    if (!db.isMockMode()) {
+      try {
+        const pool = db.getPool() || db.initDb();
+        if (pool) {
+          const now = new Date().toISOString();
+          const res = await pool.query(
+            'UPDATE stores SET status = $1, updated_at = $2 WHERE id = $3 RETURNING *',
+            [newStatus, now, id]
+          );
+          if (!res.rows || res.rows.length === 0) {
+            const err = new Error(`Store with id '${id}' not found`);
+            err.statusCode = 404;
+            throw err;
+          }
+          const updatedStore = this._mapDbRowToStore(res.rows[0]);
+          this.stores.set(id, updatedStore);
+          return this._sanitizeStore(updatedStore);
+        }
+      } catch (err) {
+        if (err.statusCode) throw err;
+        console.warn('Postgres updateStoreStatus failed, falling back:', err.message);
+      }
+    }
+
+    const store = this.stores.get(id);
+    if (!store) {
+      const err = new Error(`Store with id '${id}' not found`);
+      err.statusCode = 404;
       throw err;
     }
 
@@ -500,6 +666,25 @@ class PharmacyService {
    * Delete a store
    */
   async deleteStore(id) {
+    if (!db.isMockMode()) {
+      try {
+        const pool = db.getPool() || db.initDb();
+        if (pool) {
+          const res = await pool.query('DELETE FROM stores WHERE id = $1 RETURNING id', [id]);
+          if (!res.rows || res.rows.length === 0) {
+            const err = new Error(`Store with id '${id}' not found`);
+            err.statusCode = 404;
+            throw err;
+          }
+          this.stores.delete(id);
+          return true;
+        }
+      } catch (err) {
+        if (err.statusCode) throw err;
+        console.warn('Postgres deleteStore failed, falling back:', err.message);
+      }
+    }
+
     if (!this.stores.has(id)) {
       const err = new Error(`Store with id '${id}' not found`);
       err.statusCode = 404;
@@ -638,8 +823,9 @@ class PharmacyService {
 
     const results = [];
 
-    // Loop through registered stores
-    for (const store of this.stores.values()) {
+    // Loop through registered stores (from Postgres in cloud, or memory in mock)
+    const allStores = !db.isMockMode() ? await this.listStores() : Array.from(this.stores.values());
+    for (const store of allStores) {
       // STRICT SECURITY: MUST NEVER return medicines from SUSPENDED stores
       if (store.status !== 'ACTIVE') {
         continue;

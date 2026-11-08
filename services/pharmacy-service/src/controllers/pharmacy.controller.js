@@ -1,5 +1,6 @@
 const pharmacyService = require('../services/pharmacy.service');
 const { checkRedisStatus } = require('../config/redis');
+const { checkDbStatus } = require('../config/db');
 
 /**
  * Liveness probe: returns UP status and timestamp
@@ -17,11 +18,13 @@ async function getHealth(req, res) {
  */
 async function getReadiness(req, res) {
   const redisInfo = await checkRedisStatus();
+  const dbInfo = await checkDbStatus();
   return res.status(200).json({
     status: 'READY',
     service: 'pharmacy-service',
     timestamp: new Date().toISOString(),
-    redis: redisInfo
+    redis: redisInfo,
+    database: dbInfo
   });
 }
 
