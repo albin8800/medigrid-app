@@ -853,7 +853,11 @@ class PharmacyService {
 
       // Find matching medicines for this store
       let storeMedicineMatches = 0;
-      for (const med of this.medicines.values()) {
+      const storeMeds = !db.isMockMode()
+        ? await this.listMedicines({ storeId: store.id })
+        : Array.from(this.medicines.values()).filter((m) => m.storeId === store.id);
+
+      for (const med of storeMeds) {
         if (med.storeId !== store.id) {
           continue;
         }
@@ -1050,6 +1054,30 @@ class PharmacyService {
   // MEDICINE CATALOG & INVENTORY APIs
   // ==========================================
 
+  /**
+   * Map PostgreSQL database row to normalized Medicine object
+   */
+  _mapDbRowToMedicine(row) {
+    if (!row) return null;
+    const stockQty = parseInt(row.stock_quantity ?? 0, 10);
+    return {
+      id: row.id,
+      storeId: row.store_id || 'store-001',
+      name: row.name,
+      genericName: row.generic_name || '',
+      category: row.category || 'General',
+      batchNumber: row.batch_number || '',
+      expiryDate: row.expiry_date || '',
+      price: parseFloat(row.price || 0),
+      stockQuantity: stockQty,
+      reorderLevel: parseInt(row.reorder_level ?? 10, 10),
+      inStock: stockQty > 0,
+      locationRack: row.location_rack || '',
+      createdAt: row.created_at ? new Date(row.created_at).toISOString() : new Date().toISOString(),
+      updatedAt: row.updated_at ? new Date(row.updated_at).toISOString() : new Date().toISOString()
+    };
+  }
+
   async addMedicine(medicineData) {
     if (!medicineData || !medicineData.name || typeof medicineData.name !== 'string' || medicineData.name.trim() === '') {
       const err = new Error('Medicine name is required');
@@ -1089,46 +1117,170 @@ class PharmacyService {
       updatedAt
     };
 
+    if (!db.isMockMode()) {
+      try {
+        const pool = db.getPool() || db.initDb();
+        if (pool) {
+          const insertSql = `
+            INSERT INTO medicines (id, store_id, name, generic_name, category, batch_number, expiry_date, price, stock_quantity, reorder_level, in_stock, location_rack, created_at, updated_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+            ON CONFLICT (id) DO UPDATE SET
+              store_id = EXCLUDED.store_id,
+              name = EXCLUDED.name,
+              generic_name = EXCLUDED.generic_name,
+              category = EXCLUDED.category,
+              batch_number = EXCLUDED.batch_number,
+              expiry_date = EXCLUDED.expiry_date,
+              price = EXCLUDED.price,
+              stock_quantity = EXCLUDED.stock_quantity,
+              reorder_level = EXCLUDED.reorder_level,
+              in_stock = EXCLUDED.in_stock,
+              location_rack = EXCLUDED.location_rack,
+              updated_at = EXCLUDED.updated_at
+            RETURNING *;
+          `;
+          const result = await pool.query(insertSql, [
+            medicine.id,
+            medicine.storeId,
+            medicine.name,
+            medicine.genericName,
+            medicine.category,
+            medicine.batchNumber,
+            medicine.expiryDate,
+            medicine.price,
+            medicine.stockQuantity,
+            medicine.reorderLevel,
+            medicine.inStock,
+            medicine.locationRack,
+            medicine.createdAt,
+            medicine.updatedAt
+          ]);
+
+          if (result.rows && result.rows.length > 0) {
+            const savedMed = this._mapDbRowToMedicine(result.rows[0]);
+            this.medicines.set(savedMed.id, savedMed);
+            return savedMed;
+          }
+        }
+      } catch (err) {
+        console.warn('Postgres persist failed in addMedicine, falling back to in-memory:', err.message);
+      }
+    }
+
     this.medicines.set(id, medicine);
     return medicine;
   }
 
   async searchMedicines({ query, storeId } = {}) {
     const q = (query || '').trim().toLowerCase();
-    const results = [];
 
+    if (!db.isMockMode()) {
+      try {
+        const pool = db.getPool() || db.initDb();
+        if (pool) {
+          let sql = 'SELECT * FROM medicines WHERE 1=1';
+          const params = [];
+          let paramIdx = 1;
+
+          if (storeId) {
+            sql += ` AND store_id = $${paramIdx++}`;
+            params.push(storeId);
+          }
+
+          if (q) {
+            sql += ` AND (LOWER(name) LIKE $${paramIdx} OR LOWER(generic_name) LIKE $${paramIdx} OR LOWER(category) LIKE $${paramIdx})`;
+            params.push(`%${q}%`);
+            paramIdx++;
+          }
+
+          sql += ' ORDER BY created_at DESC';
+
+          const res = await pool.query(sql, params);
+          if (res.rows) {
+            return res.rows.map((row) => this._mapDbRowToMedicine(row));
+          }
+        }
+      } catch (err) {
+        console.warn('Postgres searchMedicines failed, falling back:', err.message);
+      }
+    }
+
+    const results = [];
     for (const medicine of this.medicines.values()) {
       if (storeId && medicine.storeId !== storeId) {
         continue;
       }
-
       if (q && !this.matchesMedicine(medicine, q)) {
         continue;
       }
-
       results.push({
         ...medicine,
         inStock: medicine.stockQuantity > 0
       });
     }
-
     return results;
   }
 
   async getMedicineById(id) {
     if (!id) return null;
+
+    if (!db.isMockMode()) {
+      try {
+        const pool = db.getPool() || db.initDb();
+        if (pool) {
+          const res = await pool.query('SELECT * FROM medicines WHERE id = $1 LIMIT 1', [id]);
+          if (res.rows && res.rows.length > 0) {
+            return this._mapDbRowToMedicine(res.rows[0]);
+          }
+          return null;
+        }
+      } catch (err) {
+        console.warn('Postgres getMedicineById failed, falling back:', err.message);
+      }
+    }
+
     return this.medicines.get(id) || null;
   }
 
   async listMedicines({ storeId, category } = {}) {
-    const results = [];
     const targetCat = (category || '').trim().toLowerCase();
 
+    if (!db.isMockMode()) {
+      try {
+        const pool = db.getPool() || db.initDb();
+        if (pool) {
+          let sql = 'SELECT * FROM medicines WHERE 1=1';
+          const params = [];
+          let paramIdx = 1;
+
+          if (storeId) {
+            sql += ` AND store_id = $${paramIdx++}`;
+            params.push(storeId);
+          }
+
+          if (targetCat && targetCat !== 'all') {
+            sql += ` AND LOWER(category) = LOWER($${paramIdx++})`;
+            params.push(targetCat);
+          }
+
+          sql += ' ORDER BY created_at DESC';
+
+          const res = await pool.query(sql, params);
+          if (res.rows) {
+            return res.rows.map((row) => this._mapDbRowToMedicine(row));
+          }
+        }
+      } catch (err) {
+        console.warn('Postgres listMedicines failed, falling back:', err.message);
+      }
+    }
+
+    const results = [];
     for (const medicine of this.medicines.values()) {
       if (storeId && medicine.storeId !== storeId) {
         continue;
       }
-      if (targetCat && (!medicine.category || medicine.category.toLowerCase() !== targetCat)) {
+      if (targetCat && targetCat !== 'all' && (!medicine.category || medicine.category.toLowerCase() !== targetCat)) {
         continue;
       }
       results.push({
@@ -1136,15 +1288,68 @@ class PharmacyService {
         inStock: medicine.stockQuantity > 0
       });
     }
-
     return results;
   }
 
   async updateMedicine(id, updateData = {}) {
-    const medicine = this.medicines.get(id);
-    if (!medicine) {
-      return null;
+    if (!id) return null;
+
+    if (!db.isMockMode()) {
+      try {
+        const pool = db.getPool() || db.initDb();
+        if (pool) {
+          const existing = await this.getMedicineById(id);
+          if (!existing) return null;
+
+          const updated = { ...existing };
+          if (updateData.name !== undefined) {
+            if (typeof updateData.name !== 'string' || updateData.name.trim() === '') {
+              const err = new Error('Medicine name cannot be empty');
+              err.statusCode = 400;
+              throw err;
+            }
+            updated.name = updateData.name.trim();
+          }
+          if (updateData.genericName !== undefined) updated.genericName = (updateData.genericName || '').trim();
+          if (updateData.category !== undefined) updated.category = (updateData.category || '').trim();
+          if (updateData.batchNumber !== undefined) updated.batchNumber = (updateData.batchNumber || '').trim();
+          if (updateData.expiryDate !== undefined) updated.expiryDate = updateData.expiryDate;
+          if (updateData.price !== undefined) updated.price = Number(updateData.price);
+          if (updateData.stockQuantity !== undefined) updated.stockQuantity = Number(updateData.stockQuantity);
+          if (updateData.reorderLevel !== undefined) updated.reorderLevel = Number(updateData.reorderLevel);
+          if (updateData.locationRack !== undefined) updated.locationRack = (updateData.locationRack || '').trim();
+          if (updateData.storeId !== undefined) updated.storeId = updateData.storeId;
+          updated.inStock = updated.stockQuantity > 0;
+          updated.updatedAt = new Date().toISOString();
+
+          const updateSql = `
+            UPDATE medicines SET
+              store_id = $1, name = $2, generic_name = $3, category = $4,
+              batch_number = $5, expiry_date = $6, price = $7, stock_quantity = $8,
+              reorder_level = $9, in_stock = $10, location_rack = $11, updated_at = $12
+            WHERE id = $13
+            RETURNING *;
+          `;
+          const res = await pool.query(updateSql, [
+            updated.storeId, updated.name, updated.genericName, updated.category,
+            updated.batchNumber, updated.expiryDate, updated.price, updated.stockQuantity,
+            updated.reorderLevel, updated.inStock, updated.locationRack, updated.updatedAt,
+            id
+          ]);
+          if (res.rows && res.rows.length > 0) {
+            const saved = this._mapDbRowToMedicine(res.rows[0]);
+            this.medicines.set(id, saved);
+            return saved;
+          }
+        }
+      } catch (err) {
+        if (err.statusCode) throw err;
+        console.warn('Postgres updateMedicine failed, falling back:', err.message);
+      }
     }
+
+    const medicine = this.medicines.get(id);
+    if (!medicine) return null;
 
     if (updateData.name !== undefined) {
       if (typeof updateData.name !== 'string' || updateData.name.trim() === '') {
@@ -1158,15 +1363,9 @@ class PharmacyService {
     if (updateData.category !== undefined) medicine.category = (updateData.category || '').trim();
     if (updateData.batchNumber !== undefined) medicine.batchNumber = (updateData.batchNumber || '').trim();
     if (updateData.expiryDate !== undefined) medicine.expiryDate = updateData.expiryDate;
-    if (updateData.price !== undefined) {
-      medicine.price = typeof updateData.price === 'number' ? updateData.price : Number(updateData.price);
-    }
-    if (updateData.stockQuantity !== undefined) {
-      medicine.stockQuantity = typeof updateData.stockQuantity === 'number' ? updateData.stockQuantity : Number(updateData.stockQuantity);
-    }
-    if (updateData.reorderLevel !== undefined) {
-      medicine.reorderLevel = typeof updateData.reorderLevel === 'number' ? updateData.reorderLevel : Number(updateData.reorderLevel);
-    }
+    if (updateData.price !== undefined) medicine.price = typeof updateData.price === 'number' ? updateData.price : Number(updateData.price);
+    if (updateData.stockQuantity !== undefined) medicine.stockQuantity = typeof updateData.stockQuantity === 'number' ? updateData.stockQuantity : Number(updateData.stockQuantity);
+    if (updateData.reorderLevel !== undefined) medicine.reorderLevel = typeof updateData.reorderLevel === 'number' ? updateData.reorderLevel : Number(updateData.reorderLevel);
     if (updateData.locationRack !== undefined) medicine.locationRack = (updateData.locationRack || '').trim();
     if (updateData.storeId !== undefined) medicine.storeId = updateData.storeId;
 
@@ -1178,19 +1377,6 @@ class PharmacyService {
   }
 
   async adjustStock(id, { action, quantity, storeId } = {}) {
-    const medicine = this.medicines.get(id);
-    if (!medicine) {
-      const err = new Error(`Medicine with id '${id}' not found`);
-      err.statusCode = 404;
-      throw err;
-    }
-
-    if (storeId && medicine.storeId !== storeId) {
-      const err = new Error(`Medicine '${id}' does not belong to store '${storeId}'`);
-      err.statusCode = 403;
-      throw err;
-    }
-
     const numQty = Number(quantity);
     if (isNaN(numQty) || numQty <= 0 || !Number.isInteger(numQty)) {
       const err = new Error('Quantity must be a positive integer');
@@ -1202,6 +1388,69 @@ class PharmacyService {
     if (act !== 'DEDUCT' && act !== 'RESTOCK') {
       const err = new Error(`Invalid stock adjustment action: '${action}'. Must be DEDUCT or RESTOCK`);
       err.statusCode = 400;
+      throw err;
+    }
+
+    if (!db.isMockMode()) {
+      try {
+        const pool = db.getPool() || db.initDb();
+        if (pool) {
+          const checkRes = await pool.query('SELECT * FROM medicines WHERE id = $1 LIMIT 1', [id]);
+          if (!checkRes.rows || checkRes.rows.length === 0) {
+            const err = new Error(`Medicine with id '${id}' not found`);
+            err.statusCode = 404;
+            throw err;
+          }
+
+          const current = this._mapDbRowToMedicine(checkRes.rows[0]);
+          if (storeId && current.storeId !== storeId) {
+            const err = new Error(`Medicine '${id}' does not belong to store '${storeId}'`);
+            err.statusCode = 403;
+            throw err;
+          }
+
+          let newStock = current.stockQuantity;
+          if (act === 'DEDUCT') {
+            if (current.stockQuantity < numQty) {
+              const err = new Error(`Insufficient stock for medicine '${current.name}'. Available: ${current.stockQuantity}, Requested: ${numQty}`);
+              err.statusCode = 409;
+              throw err;
+            }
+            newStock -= numQty;
+          } else {
+            newStock += numQty;
+          }
+
+          const inStock = newStock > 0;
+          const updatedAt = new Date().toISOString();
+
+          const updateRes = await pool.query(
+            'UPDATE medicines SET stock_quantity = $1, in_stock = $2, updated_at = $3 WHERE id = $4 RETURNING *',
+            [newStock, inStock, updatedAt, id]
+          );
+
+          if (updateRes.rows && updateRes.rows.length > 0) {
+            const updated = this._mapDbRowToMedicine(updateRes.rows[0]);
+            this.medicines.set(id, updated);
+            return updated;
+          }
+        }
+      } catch (err) {
+        if (err.statusCode) throw err;
+        console.warn('Postgres adjustStock failed, falling back to in-memory:', err.message);
+      }
+    }
+
+    const medicine = this.medicines.get(id);
+    if (!medicine) {
+      const err = new Error(`Medicine with id '${id}' not found`);
+      err.statusCode = 404;
+      throw err;
+    }
+
+    if (storeId && medicine.storeId !== storeId) {
+      const err = new Error(`Medicine '${id}' does not belong to store '${storeId}'`);
+      err.statusCode = 403;
       throw err;
     }
 

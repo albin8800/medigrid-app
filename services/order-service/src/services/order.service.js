@@ -730,6 +730,43 @@ class OrderService {
    * List all bills with total revenue metric
    */
   async listBills({ storeId } = {}) {
+    if (!db.isMockMode() && process.env.DATABASE_URL) {
+      try {
+        const pool = db.getPool() || db.initDb();
+        if (pool) {
+          let sql = 'SELECT * FROM bills WHERE 1=1';
+          const params = [];
+          if (storeId) {
+            sql += ' AND store_id = $1';
+            params.push(storeId);
+          }
+          sql += ' ORDER BY created_at DESC';
+          const res = await pool.query(sql, params);
+          if (res.rows) {
+            const bills = res.rows.map((row) => ({
+              billId: row.bill_id,
+              storeId: row.store_id,
+              customerName: row.customer_name,
+              customerPhone: row.customer_phone,
+              paymentMethod: row.payment_method,
+              items: typeof row.items === 'string' ? JSON.parse(row.items) : (row.items || []),
+              subtotal: parseFloat(row.subtotal || 0),
+              discountAmount: parseFloat(row.discount_amount || 0),
+              taxAmount: parseFloat(row.tax_amount || 0),
+              finalTotal: parseFloat(row.final_total || row.total_amount || 0),
+              status: row.status,
+              createdAt: row.created_at,
+              updatedAt: row.updated_at
+            }));
+            const totalRevenue = Math.round(bills.reduce((sum, b) => sum + (Number(b.finalTotal) || 0), 0) * 100) / 100;
+            return { bills, totalRevenue, count: bills.length };
+          }
+        }
+      } catch (err) {
+        console.warn('Postgres listBills failed, falling back:', err.message);
+      }
+    }
+
     const bills = db.mockStore.listBills({ storeId });
     const totalRevenue =
       Math.round(
@@ -747,7 +784,19 @@ class OrderService {
    * Platform-wide sales analytics aggregating total stores, total revenue, and top-selling medicines
    */
   async getPlatformAnalytics() {
-    const bills = db.mockStore.listBills();
+    let bills = [];
+    if (!db.isMockMode() && process.env.DATABASE_URL) {
+      try {
+        const billRes = await this.listBills();
+        bills = billRes.bills || [];
+      } catch (err) {
+        console.warn('Postgres getPlatformAnalytics bills fetch failed, falling back:', err.message);
+        bills = db.mockStore.listBills();
+      }
+    } else {
+      bills = db.mockStore.listBills();
+    }
+
     const totalRevenue =
       Math.round(
         bills.reduce((sum, b) => sum + (Number(b.finalTotal) || 0), 0) * 100

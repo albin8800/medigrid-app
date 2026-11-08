@@ -73,11 +73,15 @@ export default function StoreInventoryPage() {
     }
 
     loadData();
+    const timer = setInterval(() => {
+      loadData(true);
+    }, 4000);
+    return () => clearInterval(timer);
   }, [storeSession, isInitialized, selectedCategory]);
 
-  const loadData = async () => {
+  const loadData = async (isBackground = false) => {
     if (!storeSession?.store?.id) return;
-    setLoading(true);
+    if (!isBackground) setLoading(true);
     try {
       const res = await listStoreMedicines(storeSession.store.id, selectedCategory);
       setMedicines(res.data);
@@ -85,7 +89,7 @@ export default function StoreInventoryPage() {
     } catch (err) {
       console.error('Failed to load store inventory:', err);
     } finally {
-      setLoading(false);
+      if (!isBackground) setLoading(false);
     }
   };
 
@@ -233,7 +237,7 @@ export default function StoreInventoryPage() {
           </select>
           <button
             type="button"
-            onClick={loadData}
+            onClick={() => loadData()}
             title="Refresh Catalog"
             className="p-2 rounded-lg border border-slate-200 text-slate-500 hover:text-slate-800 hover:bg-slate-50 transition"
           >

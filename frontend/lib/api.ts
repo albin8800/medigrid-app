@@ -469,6 +469,13 @@ export async function addStoreMedicine(
 
     if (res.ok) {
       const json = await res.json();
+      try {
+        const stored = getStoredMedicines();
+        stored.unshift(json.data);
+        saveStoredMedicines(stored);
+      } catch {
+        // ignore
+      }
       return { data: json.data, source: 'api' };
     }
   } catch {
@@ -741,12 +748,12 @@ export async function getAdminAnalyticsApi(): Promise<{ data: AdminAnalytics; so
   return {
     data: {
       totalStores: stores.length,
-      totalRevenue: totalRevenue > 0 ? totalRevenue : 14285.50,
-      totalBills: bills.length > 0 ? bills.length : 48,
+      totalRevenue: totalRevenue,
+      totalBills: bills.length,
       storeBreakdown: stores.map((s) => ({
         storeId: s.id,
-        totalRevenue: s.status === 'ACTIVE' ? 7142.75 : 0,
-        billCount: s.status === 'ACTIVE' ? 24 : 0,
+        totalRevenue: 0,
+        billCount: 0,
       })),
     },
     source: 'fallback',
@@ -870,6 +877,16 @@ export async function adjustMedicineStock(
 
     if (res.ok) {
       const json = await res.json();
+      try {
+        const stored = getStoredMedicines();
+        const medIdx = stored.findIndex((m) => m.id === id);
+        if (medIdx !== -1) {
+          stored[medIdx] = json.data;
+          saveStoredMedicines(stored);
+        }
+      } catch {
+        // ignore
+      }
       return { data: json.data, source: 'api' };
     }
   } catch {

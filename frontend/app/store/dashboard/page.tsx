@@ -36,19 +36,23 @@ export default function StoreDashboardPage() {
       return;
     }
 
-    const loadStoreData = async () => {
-      setLoading(true);
+    const loadStoreData = async (isBackground = false) => {
+      if (!isBackground) setLoading(true);
       try {
         const res = await listStoreMedicines(storeSession.store.id);
         setMedicines(res.data);
       } catch (err) {
         console.error('Failed to load store inventory:', err);
       } finally {
-        setLoading(false);
+        if (!isBackground) setLoading(false);
       }
     };
 
     loadStoreData();
+    const timer = setInterval(() => {
+      loadStoreData(true);
+    }, 4000);
+    return () => clearInterval(timer);
   }, [storeSession, isInitialized, router]);
 
   if (!isInitialized || !storeSession?.store) {
