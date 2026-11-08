@@ -22,7 +22,7 @@ import {
   FileCheck,
 } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
-import { listStoreMedicines, createBill, adjustMedicineStock, matchesMedicineSearch } from '@/lib/api';
+import { listStoreMedicines, createBill, matchesMedicineSearch } from '@/lib/api';
 import { Medicine, Bill, PaymentMethod } from '@/lib/types';
 import { formatINR, cn } from '@/lib/utils';
 
@@ -194,17 +194,8 @@ export default function StorePOSPage() {
         })
       );
 
-      // 2. Ensure both API backend and local fallback storage reflect stock deduction
-      for (const item of currentCart) {
-        try {
-          await adjustMedicineStock(item.medicineId, 'DEDUCT', item.quantity, storeSession.store.id);
-        } catch {
-          // Handled if order-service already deducted
-        }
-      }
-
       setCompletedBill(res.data);
-      loadCatalog();
+      loadCatalog(true);
       clearRegister();
     } catch (err: any) {
       setPosError(err.message || 'Billing transaction failed.');
