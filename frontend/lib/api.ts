@@ -10,8 +10,8 @@ import {
 } from './types';
 import { INITIAL_MEDICINES, INITIAL_STORES } from './mock-data';
 
-const CATALOG_API_BASE = process.env.NEXT_PUBLIC_CATALOG_API_URL || 'http://localhost:5001';
-const BILLING_API_BASE = process.env.NEXT_PUBLIC_BILLING_API_URL || 'http://localhost:5002';
+const CATALOG_API_BASE = process.env.NEXT_PUBLIC_CATALOG_API_URL || '';
+const BILLING_API_BASE = process.env.NEXT_PUBLIC_BILLING_API_URL || '';
 
 // In-memory / browser fallback storage keys
 const STORAGE_MEDICINES_KEY = 'medigrid_medicines_fallback';
