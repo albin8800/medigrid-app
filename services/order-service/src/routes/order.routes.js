@@ -5,6 +5,7 @@ const orderController = require('../controllers/order.controller');
 // Health & Readiness probes
 router.get('/healthz', orderController.getHealth);
 router.get('/ready', orderController.getReadiness);
+router.get('/metrics', orderController.getMetrics);
 
 // Order management endpoints
 router.post('/api/v1/orders', orderController.createOrder);

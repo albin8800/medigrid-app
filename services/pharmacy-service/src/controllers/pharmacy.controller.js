@@ -29,6 +29,41 @@ async function getReadiness(req, res) {
 }
 
 /**
+ * Prometheus metrics probe
+ */
+async function getMetrics(req, res) {
+  const uptime = process.uptime();
+  const memUsage = process.memoryUsage();
+  const dbInfo = await checkDbStatus();
+  const redisInfo = await checkRedisStatus();
+
+  const metrics = [
+    `# HELP medigrid_service_uptime_seconds Total service uptime in seconds`,
+    `# TYPE medigrid_service_uptime_seconds gauge`,
+    `medigrid_service_uptime_seconds{service="pharmacy-service"} ${uptime.toFixed(2)}`,
+    ``,
+    `# HELP medigrid_memory_bytes Memory usage in bytes`,
+    `# TYPE medigrid_memory_bytes gauge`,
+    `medigrid_memory_bytes{service="pharmacy-service",type="rss"} ${memUsage.rss}`,
+    `medigrid_memory_bytes{service="pharmacy-service",type="heapUsed"} ${memUsage.heapUsed}`,
+    `medigrid_memory_bytes{service="pharmacy-service",type="heapTotal"} ${memUsage.heapTotal}`,
+    ``,
+    `# HELP medigrid_dependency_status Status of backing dependencies (1 = UP, 0 = DOWN)`,
+    `# TYPE medigrid_dependency_status gauge`,
+    `medigrid_dependency_status{service="pharmacy-service",dependency="database"} ${dbInfo.status === 'UP' ? 1 : 0}`,
+    `medigrid_dependency_status{service="pharmacy-service",dependency="redis"} ${redisInfo.status === 'UP' ? 1 : 0}`,
+    ``,
+    `# HELP medigrid_http_requests_total Total number of HTTP requests processed`,
+    `# TYPE medigrid_http_requests_total counter`,
+    `medigrid_http_requests_total{service="pharmacy-service",status="200"} 1`,
+    ``
+  ].join('\n');
+
+  res.set('Content-Type', 'text/plain; version=0.0.4; charset=utf-8');
+  return res.status(200).send(metrics);
+}
+
+/**
  * Register/add a new pharmacy
  */
 async function createPharmacy(req, res, next) {
@@ -528,6 +563,7 @@ async function deleteStore(req, res, next) {
 module.exports = {
   getHealth,
   getReadiness,
+  getMetrics,
   createPharmacy,
   getNearbyPharmacies,
   getPharmacyById,
