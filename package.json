@@ -1,0 +1,16 @@
+{
+  "name": "medigrid-app",
+  "version": "1.0.0",
+  "description": "MediGrid Enterprise B2B2C Pharmacy System",
+  "private": true,
+  "scripts": {
+    "start": "./start-local.sh",
+    "db:backup": "./scripts/db-backup.sh",
+    "db:restore": "./scripts/db-restore.sh",
+    "db:clear": "./scripts/db-clear.sh",
+    "test:pharmacy": "cd services/pharmacy-service && npm test",
+    "test:orders": "cd services/order-service && npm test",
+    "test:all": "npm run test:pharmacy && npm run test:orders",
+    "build:frontend": "cd frontend && npm run build"
+  }
+}

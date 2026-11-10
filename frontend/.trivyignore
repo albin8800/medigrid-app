@@ -1,0 +1,7 @@
+# Security Exception Waiver
+# CVE-2026-75604: Exploit strictly targets Windows-hosted servers. Target image is Alpine Linux.
+CVE-2026-75604 
+
+# GHSA-2464-fhr4-w9xw & GHSA-2xp9-vwfh-vxw4: Image optimization disabled in next.config.js (images.unoptimized=true). 
+GHSA-2464-fhr4-w9xw 
+GHSA-2xp9-vwfh-vxw4
