@@ -8,6 +8,9 @@ router.get('/healthz', pharmacyController.getHealth);
 // Readiness probe
 router.get('/ready', pharmacyController.getReadiness);
 
+// Prometheus metrics probe
+router.get('/metrics', pharmacyController.getMetrics);
+
 // Pharmacy API endpoints
 router.post('/api/v1/pharmacies', pharmacyController.createPharmacy);
 router.get('/api/v1/pharmacies/nearby', pharmacyController.getNearbyPharmacies);
